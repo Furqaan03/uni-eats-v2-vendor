@@ -6,6 +6,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/providers/vendor_provider.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/order.dart';
+import '../../widgets/reject_reason_dialog.dart';
 import 'widgets/delivery_tracker_card.dart';
 
 class OrderDetailScreen extends StatelessWidget {
@@ -15,24 +16,37 @@ class OrderDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final vendor = context.watch<VendorProvider>();
-    final order = vendor.orders.firstWhere(
-      (o) => o.id == orderId,
-      orElse: () => vendor.orders.first,
-    );
+    final order = vendor.orders.cast<VendorOrder?>().firstWhere(
+          (o) => o!.id == orderId,
+          orElse: () => null,
+        );
+    if (order == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+      });
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final canAct = order.status != OrderStatus.delivered &&
-        order.status != OrderStatus.cancelled;
+    // Cancelling makes sense before the kitchen has started — either the
+    // initial decision, or stuck waiting on a driver with no food committed.
+    final canCancel =
+        order.status == OrderStatus.newOrder || order.status == OrderStatus.awaitingDriver;
+    final canAct = (canCancel || order.status == OrderStatus.preparing ||
+            order.status == OrderStatus.ready) &&
+        _actionLabel(order).isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
         title: Text(order.orderNumber,
             style: GoogleFonts.fredoka(fontWeight: FontWeight.w500)),
         actions: [
-          if (canAct)
+          if (canCancel)
             TextButton(
-              onPressed: () {
-                vendor.cancelOrder(orderId);
-                Navigator.of(context).pop();
+              onPressed: () async {
+                final reason = await showRejectReasonDialog(context);
+                if (reason == null) return;
+                vendor.cancelOrder(orderId, reason: reason);
+                if (context.mounted) Navigator.of(context).pop();
               },
               child: const Text('Cancel Order',
                   style: TextStyle(color: AppColors.error, fontSize: 13)),
@@ -231,8 +245,10 @@ class OrderDetailScreen extends StatelessWidget {
               const SizedBox(height: 10),
             ],
 
-            // ── Delivery tracker (ready delivery orders) ─────────────────
-            if (order.status == OrderStatus.ready && order.isDelivery) ...[
+            // ── Delivery tracker (ready/on-the-way delivery orders) ──────
+            if ((order.status == OrderStatus.ready ||
+                    order.status == OrderStatus.onTheWay) &&
+                order.isDelivery) ...[
               _SectionCard(
                 isDark: isDark,
                 child: Column(
@@ -294,10 +310,12 @@ class OrderDetailScreen extends StatelessWidget {
     );
   }
 
+  // Delivery orders have no vendor action once Ready — the driver app
+  // takes it from there (On the Way → Delivered), so the button is hidden.
   String _actionLabel(VendorOrder o) => switch (o.status) {
         OrderStatus.newOrder => 'Accept Order',
         OrderStatus.preparing => 'Mark as Ready',
-        OrderStatus.ready => o.isDelivery ? 'Mark as Delivered' : 'Mark as Picked Up',
+        OrderStatus.ready => o.isDelivery ? '' : 'Mark as Picked Up',
         _ => '',
       };
 
@@ -379,24 +397,30 @@ class _StatusHeader extends StatelessWidget {
 
   Color _statusColor(OrderStatus s) => switch (s) {
         OrderStatus.newOrder => AppColors.statusNew,
+        OrderStatus.awaitingDriver => AppColors.statusNew,
         OrderStatus.preparing => AppColors.statusPreparing,
         OrderStatus.ready => AppColors.statusReady,
+        OrderStatus.onTheWay => AppColors.statusReady,
         OrderStatus.delivered => AppColors.statusDelivered,
         OrderStatus.cancelled => AppColors.error,
       };
 
   String _statusLabel(OrderStatus s) => switch (s) {
         OrderStatus.newOrder => 'New Order',
+        OrderStatus.awaitingDriver => 'Finding a Driver',
         OrderStatus.preparing => 'Being Prepared',
         OrderStatus.ready => 'Ready for Pickup/Delivery',
+        OrderStatus.onTheWay => 'Driver On The Way',
         OrderStatus.delivered => 'Completed',
         OrderStatus.cancelled => 'Cancelled',
       };
 
   IconData _statusIcon(OrderStatus s) => switch (s) {
         OrderStatus.newOrder => Icons.fiber_new_rounded,
+        OrderStatus.awaitingDriver => Icons.pending_outlined,
         OrderStatus.preparing => Icons.outdoor_grill_rounded,
         OrderStatus.ready => Icons.check_circle_outline_rounded,
+        OrderStatus.onTheWay => Icons.delivery_dining_rounded,
         OrderStatus.delivered => Icons.done_all_rounded,
         OrderStatus.cancelled => Icons.cancel_outlined,
       };
@@ -703,11 +727,14 @@ class _Timeline extends StatelessWidget {
         true,
         o.status == OrderStatus.newOrder
       ),
-      step('Accepted & Preparing', 'Kitchen confirmed', OrderStatus.preparing),
-      step('Ready', o.isDelivery ? 'Awaiting driver' : 'Awaiting customer', OrderStatus.ready),
       if (o.isDelivery)
-        step('Out for Delivery', 'Driver en route', OrderStatus.delivered)
-      else
+        step('Finding a Driver', 'Kitchen waits until one is found', OrderStatus.awaitingDriver),
+      step('Accepted & Preparing', 'Kitchen confirmed', OrderStatus.preparing),
+      step('Ready', o.isDelivery ? 'Awaiting pickup' : 'Awaiting customer', OrderStatus.ready),
+      if (o.isDelivery) ...[
+        step('Out for Delivery', 'Driver picked up, en route', OrderStatus.onTheWay),
+        step('Delivered', 'Order complete', OrderStatus.delivered),
+      ] else
         step('Picked Up', 'Order complete', OrderStatus.delivered),
       if (isCancelled)
         ('Cancelled', '', false, true),

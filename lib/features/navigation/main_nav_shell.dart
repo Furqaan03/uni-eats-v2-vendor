@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/providers/nav_provider.dart';
+import '../analytics/analytics_screen.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../orders/orders_screen.dart';
 import '../menu/menu_screen.dart';
-import '../analytics/analytics_screen.dart';
 import '../profile/profile_screen.dart';
 
 class MainNavShell extends StatelessWidget {

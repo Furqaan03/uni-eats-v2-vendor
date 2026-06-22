@@ -5,9 +5,11 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/providers/auth_provider.dart';
 import '../../core/providers/vendor_provider.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../widgets/app_logo.dart';
+import '../auth/login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -388,13 +390,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: AppColors.error),
             onPressed: () {
+              final nav = Navigator.of(context);
+              final auth = context.read<VendorAuthProvider>();
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Signed out',
-                      style: GoogleFonts.plusJakartaSans()),
-                  behavior: SnackBarBehavior.floating,
-                ),
+              auth.signOut();
+              nav.pushAndRemoveUntil(
+                MaterialPageRoute(builder: (_) => const VendorLoginScreen()),
+                (_) => false,
               );
             },
             child: Text('Sign Out',

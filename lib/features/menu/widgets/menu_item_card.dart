@@ -89,9 +89,41 @@ class MenuItemCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 Row(
                   children: [
-                    Text(formatCurrency(item.price),
+                    if (item.hasDiscount) ...[
+                      Text(
+                        formatCurrency(item.discountedPrice),
                         style: theme.textTheme.labelLarge
-                            ?.copyWith(color: AppColors.primary)),
+                            ?.copyWith(color: AppColors.primary),
+                      ),
+                      const SizedBox(width: 5),
+                      Text(
+                        formatCurrency(item.price),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          decoration: TextDecoration.lineThrough,
+                          decorationColor: AppColors.error,
+                          color: AppColors.error.withValues(alpha: 0.7),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '-${item.discountPercent!.toInt()}%',
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ] else
+                      Text(formatCurrency(item.price),
+                          style: theme.textTheme.labelLarge
+                              ?.copyWith(color: AppColors.primary)),
                     if (item.calories != null) ...[
                       const SizedBox(width: 8),
                       Text('${item.calories} cal',

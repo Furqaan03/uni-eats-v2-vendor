@@ -5,6 +5,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/providers/vendor_provider.dart';
 import '../../../core/utils/page_transitions.dart';
 import '../../../data/models/order.dart';
+import '../../../widgets/reject_reason_dialog.dart';
 import '../../orders/order_detail_screen.dart';
 
 class OrderTile extends StatelessWidget {
@@ -17,9 +18,7 @@ class OrderTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return GestureDetector(
-      onTap: () => Navigator.of(context).push(fadeSlidePage(OrderDetailScreen(orderId: order.id))),
-      child: Container(
+    return Container(
         decoration: BoxDecoration(
           color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
           borderRadius: BorderRadius.circular(16),
@@ -30,15 +29,24 @@ class OrderTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _TileHeader(order: order, isDark: isDark),
-            const Divider(height: 1, indent: 14, endIndent: 14),
-            _ItemsList(order: order),
+            // Tap header/items to open detail — action buttons live outside
+            // this region so they never compete with it in the gesture arena.
+            GestureDetector(
+              onTap: () => Navigator.of(context).push(fadeSlidePage(OrderDetailScreen(orderId: order.id))),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _TileHeader(order: order, isDark: isDark),
+                  const Divider(height: 1, indent: 14, endIndent: 14),
+                  _ItemsList(order: order),
+                ],
+              ),
+            ),
             const Divider(height: 1, indent: 14, endIndent: 14),
             _TileFooter(order: order, vendor: vendor),
           ],
         ),
-      ),
-    );
+      );
   }
 }
 
@@ -91,6 +99,10 @@ class _TileHeader extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   _TypeBadge(order: order),
+                  if (order.driverAtRestaurant && order.status != OrderStatus.onTheWay) ...[
+                    const SizedBox(width: 6),
+                    const _DriverArrivedBadge(),
+                  ],
                 ],
               ),
             ],
@@ -223,10 +235,25 @@ class _TileFooter extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          if (order.status != OrderStatus.delivered && order.status != OrderStatus.cancelled) ...[
-            _RejectButton(onTap: () => vendor.cancelOrder(order.id)),
-            const SizedBox(width: 8),
-            _AcceptButton(order: order, vendor: vendor),
+          // Once a delivery order is on the way, it's the driver's to
+          // finish — the vendor has no action left, so the row is hidden.
+          if (order.status != OrderStatus.delivered &&
+              order.status != OrderStatus.cancelled &&
+              order.status != OrderStatus.onTheWay) ...[
+            // Rejecting makes sense before the kitchen has started — either
+            // the initial decision, or stuck waiting on a driver with no
+            // food committed yet.
+            if (order.status == OrderStatus.newOrder ||
+                order.status == OrderStatus.awaitingDriver) ...[
+              _RejectButton(onTap: () async {
+                final reason = await showRejectReasonDialog(context);
+                if (reason != null) vendor.cancelOrder(order.id, reason: reason);
+              }),
+              const SizedBox(width: 8),
+            ],
+            if (order.status != OrderStatus.awaitingDriver &&
+                !(order.status == OrderStatus.ready && order.isDelivery))
+              _AcceptButton(order: order, vendor: vendor),
           ],
         ],
       ),
@@ -261,22 +288,41 @@ class _RejectButton extends StatelessWidget {
   }
 }
 
-class _AcceptButton extends StatelessWidget {
+class _AcceptButton extends StatefulWidget {
   const _AcceptButton({required this.order, required this.vendor});
   final VendorOrder order;
   final VendorProvider vendor;
 
-  String get _label => switch (order.status) {
+  @override
+  State<_AcceptButton> createState() => _AcceptButtonState();
+}
+
+class _AcceptButtonState extends State<_AcceptButton> {
+  bool _busy = false;
+
+  @override
+  void didUpdateWidget(_AcceptButton old) {
+    super.didUpdateWidget(old);
+    // Status actually advanced — safe to accept taps again.
+    if (old.order.status != widget.order.status) _busy = false;
+  }
+
+  String get _label => switch (widget.order.status) {
         OrderStatus.newOrder => 'Accept ✓',
         OrderStatus.preparing => 'Mark Ready',
-        OrderStatus.ready => 'Delivered',
+        OrderStatus.ready => widget.order.isDelivery ? '' : 'Picked Up ✓',
         _ => '',
       };
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => vendor.advanceOrder(order.id),
+      onTap: _busy
+          ? null
+          : () {
+              setState(() => _busy = true);
+              widget.vendor.advanceOrder(widget.order.id);
+            },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 9),
         decoration: BoxDecoration(
@@ -327,6 +373,34 @@ class _TypeBadge extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: color),
+      ),
+    );
+  }
+}
+
+// Driver is physically at the restaurant but hasn't picked up yet — shown
+// regardless of the kitchen's own preparing/ready status.
+class _DriverArrivedBadge extends StatelessWidget {
+  const _DriverArrivedBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.statusPreparing.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.moped_outlined, size: 11, color: AppColors.statusPreparing),
+          const SizedBox(width: 3),
+          Text(
+            'Driver Arrived',
+            style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.statusPreparing),
+          ),
+        ],
       ),
     );
   }

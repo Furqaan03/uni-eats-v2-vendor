@@ -2,6 +2,8 @@ enum NotificationType {
   newOrder,
   orderAccepted,
   orderReady,
+  driverArrived,
+  orderOnTheWay,
   orderDelivered,
   orderCancelled,
   orderOverdue,

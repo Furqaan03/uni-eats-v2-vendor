@@ -40,7 +40,7 @@ class _OrdersScreenState extends State<OrdersScreen>
     return Consumer<VendorProvider>(
       builder: (context, vendor, _) {
         final preparing = vendor.preparingOrders;
-        final ready = vendor.readyOrders;
+        final ready = [...vendor.readyOrders, ...vendor.outForDeliveryOrders];
         final history = vendor.historyOrders;
 
         return Scaffold(
@@ -159,7 +159,6 @@ class _PreparingTab extends StatelessWidget {
           actionLabel: 'Mark Ready',
           actionColor: AppColors.statusReady,
           onAction: () => vendor.advanceOrder(orders[i].id),
-          onCancel: () => vendor.cancelOrder(orders[i].id),
         ),
       ),
     );
@@ -188,14 +187,17 @@ class _ReadyTab extends StatelessWidget {
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (ctx, i) {
         final order = orders[i];
+        // Delivery orders have no vendor-side action once Ready — the
+        // driver app drives On the Way → Delivered from here. Only the
+        // pickup flow still has a vendor-confirmed completion button.
         return StaggeredFadeIn(
           index: i,
           child: OrderCard(
             order: order,
             vendor: vendor,
-            actionLabel: order.isDelivery ? 'Delivered ✓' : 'Picked Up ✓',
+            actionLabel: order.isDelivery ? null : 'Picked Up ✓',
             actionColor: AppColors.accent,
-            onAction: () => vendor.advanceOrder(order.id),
+            onAction: order.isDelivery ? null : () => vendor.advanceOrder(order.id),
             embedTracker: order.isDelivery,
           ),
         );

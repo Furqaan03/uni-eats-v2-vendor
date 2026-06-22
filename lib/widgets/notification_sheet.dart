@@ -91,6 +91,8 @@ class _NotificationSheet extends StatelessWidget {
       case NotificationType.newOrder:
       case NotificationType.orderAccepted:
       case NotificationType.orderReady:
+      case NotificationType.driverArrived:
+      case NotificationType.orderOnTheWay:
       case NotificationType.orderDelivered:
       case NotificationType.orderCancelled:
       case NotificationType.orderOverdue:
@@ -325,6 +327,8 @@ class _NotificationTile extends StatelessWidget {
         NotificationType.newOrder ||
         NotificationType.orderAccepted ||
         NotificationType.orderReady ||
+        NotificationType.driverArrived ||
+        NotificationType.orderOnTheWay ||
         NotificationType.orderDelivered ||
         NotificationType.orderCancelled ||
         NotificationType.orderOverdue =>
@@ -339,6 +343,10 @@ class _NotificationTile extends StatelessWidget {
           (Icons.outdoor_grill_rounded, AppColors.statusPreparing),
         NotificationType.orderReady =>
           (Icons.check_circle_outline_rounded, AppColors.statusReady),
+        NotificationType.driverArrived =>
+          (Icons.moped_outlined, AppColors.statusPreparing),
+        NotificationType.orderOnTheWay =>
+          (Icons.delivery_dining_rounded, AppColors.statusReady),
         NotificationType.orderDelivered =>
           (Icons.done_all_rounded, Colors.grey),
         NotificationType.orderCancelled =>

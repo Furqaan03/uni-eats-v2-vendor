@@ -9,6 +9,10 @@ class StatusBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (!vendor.isStatusLoaded) {
+      return const _StatusBannerSkeleton();
+    }
+
     final isOpen = vendor.isOpen;
     final isBusy = vendor.isBusy;
     final bg = isOpen ? AppColors.primary : const Color(0xFF3A3A3A);
@@ -46,7 +50,9 @@ class StatusBanner extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isOpen ? 'Open for Orders' : 'Restaurant Closed',
+                      vendor.isAdminSuspended
+                          ? 'Suspended by Admin'
+                          : (isOpen ? 'Open for Orders' : 'Restaurant Closed'),
                       style: GoogleFonts.plusJakartaSans(
                         color: Colors.white,
                         fontSize: 15,
@@ -55,9 +61,9 @@ class StatusBanner extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      isOpen
-                          ? 'Accepting new orders'
-                          : 'Tap to open and accept orders',
+                      vendor.isAdminSuspended
+                          ? 'Contact support to lift this suspension'
+                          : (isOpen ? 'Accepting new orders' : 'Tap to open and accept orders'),
                       style: GoogleFonts.plusJakartaSans(
                         color: Colors.white.withValues(alpha: 0.75),
                         fontSize: 12,
@@ -69,7 +75,7 @@ class StatusBanner extends StatelessWidget {
               const SizedBox(width: 12),
               _IosToggle(
                 value: isOpen,
-                onChanged: (_) => _confirmOpen(context, vendor),
+                onChanged: vendor.isAdminSuspended ? null : (_) => _confirmOpen(context, vendor),
               ),
             ],
           ),
@@ -194,6 +200,87 @@ class StatusBanner extends StatelessWidget {
       ),
     );
     if (ok == true) vendor.toggleBusy();
+  }
+}
+
+// ── Loading skeleton shown until the persisted open/busy status loads ───────
+
+class _StatusBannerSkeleton extends StatelessWidget {
+  const _StatusBannerSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    Widget bar({double width = double.infinity, double height = 14}) {
+      return Container(
+        width: width,
+        height: height,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(6),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF3A3A3A),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(color: Colors.grey, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    bar(width: 100),
+                    const SizedBox(height: 6),
+                    bar(width: 140, height: 11),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              bar(width: 72, height: 30),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Divider(color: Colors.white.withValues(alpha: 0.15), height: 1),
+          ),
+          Row(
+            children: [
+              Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(color: Colors.grey, shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    bar(width: 90),
+                    const SizedBox(height: 6),
+                    bar(width: 120, height: 11),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              bar(width: 72, height: 30),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -10,6 +10,6 @@ import 'package:unieats_vendor/main.dart';
 
 void main() {
   testWidgets('App smoke test', (WidgetTester tester) async {
-    await tester.pumpWidget(const UniEatsVendorApp());
+    await tester.pumpWidget(UniEatsVendorApp(firebaseReady: Future.value()));
   });
 }

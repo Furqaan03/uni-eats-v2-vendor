@@ -33,10 +33,7 @@ class OrderCard extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    return GestureDetector(
-      onTap: () => Navigator.of(context)
-          .push(fadeSlidePage(OrderDetailScreen(orderId: order.id))),
-      child: Container(
+    return Container(
         decoration: BoxDecoration(
           color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
           borderRadius: BorderRadius.circular(16),
@@ -45,8 +42,11 @@ class OrderCard extends StatelessWidget {
         ),
         child: Column(
           children: [
-            // ── Compact summary ───────────────────────────────────────────
-            Padding(
+            // ── Compact summary (tap to open detail) ───────────────────────
+            GestureDetector(
+              onTap: () => Navigator.of(context)
+                  .push(fadeSlidePage(OrderDetailScreen(orderId: order.id))),
+              child: Padding(
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
               child: Row(
                 children: [
@@ -122,6 +122,7 @@ class OrderCard extends StatelessWidget {
                       size: 18, color: Colors.grey.withValues(alpha: 0.6)),
                 ],
               ),
+              ),
             ),
 
             // ── Embedded delivery tracker (Ready tab, delivery orders) ────
@@ -171,7 +172,6 @@ class OrderCard extends StatelessWidget {
             ],
           ],
         ),
-      ),
     );
   }
 

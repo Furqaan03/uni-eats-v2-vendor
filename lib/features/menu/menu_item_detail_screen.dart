@@ -22,6 +22,7 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
   late TextEditingController _descCtrl;
   late TextEditingController _priceCtrl;
   late TextEditingController _calsCtrl;
+  late TextEditingController _discountCtrl;
   late String _category;
   late int _prepMinutes;
   late List<String> _tags;
@@ -30,8 +31,8 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
   bool _editing = false;
 
   static const _categories = [
-    'Starters', 'Mains', 'Burgers', 'Wraps & Sandwiches',
-    'Salads', 'Sides', 'Desserts', 'Drinks',
+    'Starters', 'Mains', 'Food', 'Bowls', 'Noodles', 'Healthy',
+    'Coffee', 'Cold Drinks', 'Drinks', 'Bakery', 'Desserts', 'Snacks',
   ];
 
   static const _allTags = [
@@ -39,15 +40,26 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
     'Spicy', 'Vegetarian', 'Vegan', 'Gluten Free', 'Halal',
   ];
 
-  MenuItem _getItem() => context
-      .read<VendorProvider>()
-      .menuItems
-      .firstWhere((m) => m.id == widget.itemId);
+  MenuItem? _getItem() {
+    final items = context.read<VendorProvider>().menuItems;
+    return items.cast<MenuItem?>().firstWhere(
+          (m) => m!.id == widget.itemId,
+          orElse: () => null,
+        );
+  }
 
   @override
   void initState() {
     super.initState();
-    _loadFromItem(_getItem());
+    final item = _getItem();
+    _loadFromItem(item ??
+        MenuItem(
+          id: widget.itemId,
+          name: '',
+          description: '',
+          price: 0,
+          category: _categories.first,
+        ));
   }
 
   void _loadFromItem(MenuItem item) {
@@ -55,6 +67,11 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
     _descCtrl = TextEditingController(text: item.description);
     _priceCtrl = TextEditingController(text: item.price.toStringAsFixed(2));
     _calsCtrl = TextEditingController(text: item.calories?.toString() ?? '');
+    _discountCtrl = TextEditingController(
+      text: item.discountPercent != null
+          ? item.discountPercent!.toStringAsFixed(0)
+          : '',
+    );
     _category = item.category;
     _prepMinutes = item.prepMinutes;
     _imagePath = item.imagePath;
@@ -67,6 +84,7 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
     _descCtrl.dispose();
     _priceCtrl.dispose();
     _calsCtrl.dispose();
+    _discountCtrl.dispose();
     super.dispose();
   }
 
@@ -166,7 +184,8 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
     ).then((confirmed) {
       if (confirmed != true || !mounted) return;
       final vendor = context.read<VendorProvider>();
-      final orig = _getItem();
+      final orig = _getItem()!;
+      final rawDiscount = double.tryParse(_discountCtrl.text.trim());
       final updated = MenuItem(
         id: orig.id,
         name: _nameCtrl.text.trim(),
@@ -177,6 +196,8 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
         calories: _calsCtrl.text.isEmpty ? null : int.tryParse(_calsCtrl.text),
         isAvailable: orig.isAvailable,
         imagePath: _imagePath,
+        discountPercent:
+            (rawDiscount != null && rawDiscount > 0) ? rawDiscount : null,
         tags: _tags,
       );
       vendor.updateMenuItem(updated);
@@ -199,7 +220,7 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Remove Item', style: GoogleFonts.fredoka(fontSize: 18)),
-        content: Text('Remove "${_getItem().name}" from your menu?',
+        content: Text('Remove "${_getItem()!.name}" from your menu?',
             style: GoogleFonts.plusJakartaSans(fontSize: 14)),
         actions: [
           TextButton(
@@ -223,10 +244,16 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final vendor = context.watch<VendorProvider>();
-    final item = vendor.menuItems.firstWhere(
-      (m) => m.id == widget.itemId,
-      orElse: () => vendor.menuItems.first,
-    );
+    final item = vendor.menuItems.cast<MenuItem?>().firstWhere(
+          (m) => m!.id == widget.itemId,
+          orElse: () => null,
+        );
+    if (item == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (Navigator.of(context).canPop()) Navigator.of(context).pop();
+      });
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -323,10 +350,22 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
             _InfoRow(
               icon: Icons.payments_outlined,
               label: 'Price',
-              value: 'QAR ${item.price.toStringAsFixed(2)}',
-              valueColor: AppColors.primary,
+              value: item.hasDiscount
+                  ? 'QAR ${item.discountedPrice.toStringAsFixed(2)}  (was QAR ${item.price.toStringAsFixed(2)})'
+                  : 'QAR ${item.price.toStringAsFixed(2)}',
+              valueColor: item.hasDiscount ? AppColors.accent : AppColors.primary,
               isDark: isDark,
             ),
+            if (item.hasDiscount) ...[
+              _Divider(isDark: isDark),
+              _InfoRow(
+                icon: Icons.discount_outlined,
+                label: 'Discount',
+                value: '${item.discountPercent!.toInt()}% OFF',
+                valueColor: AppColors.accent,
+                isDark: isDark,
+              ),
+            ],
             if (item.calories != null) ...[
               _Divider(isDark: isDark),
               _InfoRow(
@@ -507,6 +546,24 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
               ),
             ],
           ),
+          const SizedBox(height: 10),
+          TextFormField(
+            controller: _discountCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Item Discount',
+              suffixText: '%',
+              hintText: '0',
+              helperText: 'Leave blank for no discount',
+            ),
+            keyboardType: TextInputType.number,
+            style: GoogleFonts.plusJakartaSans(fontSize: 15),
+            validator: (v) {
+              if (v == null || v.trim().isEmpty) return null;
+              final n = double.tryParse(v.trim());
+              if (n == null || n < 0 || n > 100) return '0–100 only';
+              return null;
+            },
+          ),
           const SizedBox(height: 28),
 
           // ── Category ──────────────────────────────────────────────
@@ -515,7 +572,10 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
           DropdownButtonFormField<String>(
             value: _category,
             decoration: const InputDecoration(labelText: 'Category'),
-            items: _categories
+            // Always include the item's current category even if it's not
+            // in the known list — prevents the dropdown assertion crash for
+            // categories like "Coffee" that come from real restaurant data.
+            items: {..._categories, _category}
                 .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                 .toList(),
             onChanged: (v) => setState(() => _category = v!),
@@ -621,7 +681,7 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
                         borderRadius: BorderRadius.circular(14)),
                   ),
                   onPressed: () {
-                    _loadFromItem(_getItem());
+                    _loadFromItem(_getItem()!);
                     setState(() => _editing = false);
                   },
                   child: Text('Cancel',

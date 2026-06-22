@@ -1,13 +1,20 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/providers/auth_provider.dart';
+import '../../core/providers/vendor_provider.dart';
 import '../../core/utils/page_transitions.dart';
 import '../../widgets/app_logo.dart';
+import '../onboarding/onboarding_screen.dart';
+import '../auth/login_screen.dart';
 import '../navigation/main_nav_shell.dart';
 
 class SplashScreen extends StatefulWidget {
-  const SplashScreen({super.key});
+  const SplashScreen({super.key, required this.firebaseReady});
+  final Future<void> firebaseReady;
 
   @override
   State<SplashScreen> createState() => _SplashScreenState();
@@ -43,10 +50,40 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   void initState() {
     super.initState();
     _controller.forward();
-    Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
+    _init();
+  }
+
+  Future<void> _init() async {
+    // Run Firebase init, prefs read, and minimum splash duration in parallel.
+    final results = await Future.wait([
+      widget.firebaseReady,
+      SharedPreferences.getInstance(),
+      Future<void>.delayed(const Duration(milliseconds: 1000)),
+    ]);
+    if (!mounted) return;
+    final prefs = results[1] as SharedPreferences;
+    final seenOnboarding = prefs.getBool('vendor_seen_onboarding') ?? false;
+
+    if (!seenOnboarding) {
+      Navigator.of(context).pushReplacement(fadeSlidePage(const VendorOnboardingScreen()));
+      return;
+    }
+
+    // Try auto-login from saved credentials.
+    final auth = context.read<VendorAuthProvider>();
+    final session = await auth.tryAutoSignIn();
+    if (!mounted) return;
+
+    if (session != null) {
+      context.read<VendorProvider>().setRestaurant(
+            id: session.restaurantId,
+            name: session.restaurantName,
+            location: session.restaurantLocation,
+          );
       Navigator.of(context).pushReplacement(fadeSlidePage(const MainNavShell()));
-    });
+    } else {
+      Navigator.of(context).pushReplacement(fadeSlidePage(const VendorLoginScreen()));
+    }
   }
 
   @override

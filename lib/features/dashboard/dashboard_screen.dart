@@ -21,6 +21,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final _scrollController = ScrollController();
   final _newOrdersKey = GlobalKey();
+  final _awaitingDriverKey = GlobalKey();
   final _preparingKey = GlobalKey();
   final _readyKey = GlobalKey();
 
@@ -51,7 +52,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         return Scaffold(
           body: RefreshIndicator(
             color: AppColors.primary,
-            onRefresh: () async => await Future.delayed(const Duration(milliseconds: 600)),
+            onRefresh: vendor.refresh,
             child: CustomScrollView(
               controller: _scrollController,
               slivers: [
@@ -78,7 +79,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         onTapPreparing: vendor.preparingOrders.isNotEmpty
                             ? () => _scrollTo(_preparingKey)
                             : null,
-                        onTapReady: vendor.readyOrders.isNotEmpty
+                        onTapReady: (vendor.readyOrders.isNotEmpty || vendor.outForDeliveryOrders.isNotEmpty)
                             ? () => _scrollTo(_readyKey)
                             : null,
                       ),
@@ -115,6 +116,33 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                         ),
                         childCount: vendor.newOrders.length,
+                      ),
+                    ),
+                  ),
+
+                // ── Awaiting Driver section ─────────────────────────────────
+                if (vendor.awaitingDriverOrders.isNotEmpty)
+                  SliverPadding(
+                    padding: AppSpacing.screenInsets.copyWith(top: 16),
+                    sliver: SliverToBoxAdapter(
+                      child: _SectionHeader(
+                        key: _awaitingDriverKey,
+                        title: 'Awaiting Driver',
+                        count: vendor.awaitingDriverOrders.length,
+                        accentColor: AppColors.statusNew,
+                      ),
+                    ),
+                  ),
+                if (vendor.awaitingDriverOrders.isNotEmpty)
+                  SliverPadding(
+                    padding: AppSpacing.screenInsets.copyWith(top: 8, bottom: 4),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (ctx, i) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: OrderTile(order: vendor.awaitingDriverOrders[i], vendor: vendor),
+                        ),
+                        childCount: vendor.awaitingDriverOrders.length,
                       ),
                     ),
                   ),
@@ -161,7 +189,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   ),
                 if (vendor.readyOrders.isNotEmpty)
                   SliverPadding(
-                    padding: AppSpacing.screenInsets.copyWith(top: 8, bottom: 24),
+                    padding: AppSpacing.screenInsets.copyWith(top: 8, bottom: 4),
                     sliver: SliverList(
                       delegate: SliverChildBuilderDelegate(
                         (ctx, i) => Padding(
@@ -169,6 +197,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           child: OrderTile(order: vendor.readyOrders[i], vendor: vendor),
                         ),
                         childCount: vendor.readyOrders.length,
+                      ),
+                    ),
+                  ),
+
+                // ── Out for Delivery section ────────────────────────────────
+                if (vendor.outForDeliveryOrders.isNotEmpty)
+                  SliverPadding(
+                    padding: AppSpacing.screenInsets.copyWith(top: 16),
+                    sliver: SliverToBoxAdapter(
+                      child: _SectionHeader(
+                        title: 'Out for Delivery',
+                        count: vendor.outForDeliveryOrders.length,
+                        accentColor: AppColors.statusReady,
+                      ),
+                    ),
+                  ),
+                if (vendor.outForDeliveryOrders.isNotEmpty)
+                  SliverPadding(
+                    padding: AppSpacing.screenInsets.copyWith(top: 8, bottom: 24),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (ctx, i) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: OrderTile(order: vendor.outForDeliveryOrders[i], vendor: vendor),
+                        ),
+                        childCount: vendor.outForDeliveryOrders.length,
                       ),
                     ),
                   ),
@@ -347,7 +401,7 @@ class _KpiRow extends StatelessWidget {
           child: KpiCard(
             icon: Icons.check_circle_rounded,
             label: 'Ready',
-            value: '${vendor.readyOrders.length}',
+            value: '${vendor.readyOrders.length + vendor.outForDeliveryOrders.length}',
             color: AppColors.statusReady,
             onTap: onTapReady,
           ),

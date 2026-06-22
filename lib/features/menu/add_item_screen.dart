@@ -28,8 +28,8 @@ class _AddItemScreenState extends State<AddItemScreen> {
   final List<String> _tags = [];
 
   static const _categories = [
-    'Starters', 'Mains', 'Burgers', 'Wraps & Sandwiches',
-    'Salads', 'Sides', 'Desserts', 'Drinks',
+    'Starters', 'Mains', 'Food', 'Bowls', 'Noodles', 'Healthy',
+    'Coffee', 'Cold Drinks', 'Drinks', 'Bakery', 'Desserts', 'Snacks',
   ];
 
   static const _allTags = [

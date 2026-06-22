@@ -6,7 +6,7 @@ class OrdersRepository {
   static final List<VendorOrder> _orders = [
     VendorOrder(
       id: 'o1',
-      rawNumber: 4821,
+      orderNumber: '#P4821',
       customerName: 'Sara M.',
       customerPhone: '+974 5511 2233',
       orderType: OrderType.pickup,
@@ -22,7 +22,7 @@ class OrdersRepository {
     ),
     VendorOrder(
       id: 'o2',
-      rawNumber: 4820,
+      orderNumber: '#D4820',
       customerName: 'Ahmed K.',
       customerPhone: '+974 5522 4411',
       orderType: OrderType.delivery,
@@ -41,7 +41,7 @@ class OrdersRepository {
     ),
     VendorOrder(
       id: 'o3',
-      rawNumber: 4819,
+      orderNumber: '#P4819',
       customerName: 'Khalid H.',
       customerPhone: '+974 5533 6655',
       orderType: OrderType.pickup,
@@ -58,7 +58,7 @@ class OrdersRepository {
     ),
     VendorOrder(
       id: 'o4',
-      rawNumber: 4818,
+      orderNumber: '#SP4818',
       customerName: 'Fatima Z.',
       customerPhone: '+974 5544 8877',
       orderType: OrderType.scheduledPickup,
@@ -77,7 +77,7 @@ class OrdersRepository {
     ),
     VendorOrder(
       id: 'o5',
-      rawNumber: 4817,
+      orderNumber: '#D4817',
       customerName: 'Omar B.',
       customerPhone: '+974 5566 1122',
       orderType: OrderType.delivery,
@@ -94,7 +94,7 @@ class OrdersRepository {
     ),
     VendorOrder(
       id: 'o6',
-      rawNumber: 4816,
+      orderNumber: '#P4816',
       customerName: 'Noor A.',
       customerPhone: '+974 5577 3344',
       orderType: OrderType.pickup,
@@ -109,7 +109,7 @@ class OrdersRepository {
     ),
     VendorOrder(
       id: 'o7',
-      rawNumber: 4815,
+      orderNumber: '#SD4815',
       customerName: 'Yusuf I.',
       customerPhone: '+974 5588 9900',
       orderType: OrderType.scheduledDelivery,
@@ -131,7 +131,7 @@ class OrdersRepository {
     ),
     VendorOrder(
       id: 'o8',
-      rawNumber: 4814,
+      orderNumber: '#P4814',
       customerName: 'Layla S.',
       customerPhone: '+974 5599 0011',
       orderType: OrderType.pickup,

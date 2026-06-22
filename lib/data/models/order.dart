@@ -1,4 +1,4 @@
-enum OrderStatus { newOrder, preparing, ready, delivered, cancelled }
+enum OrderStatus { newOrder, awaitingDriver, preparing, ready, onTheWay, delivered, cancelled }
 
 enum OrderType { pickup, delivery, scheduledPickup, scheduledDelivery }
 
@@ -23,7 +23,7 @@ class OrderItem {
 class VendorOrder {
   const VendorOrder({
     required this.id,
-    required this.rawNumber,
+    required this.orderNumber,
     required this.customerName,
     required this.customerPhone,
     required this.items,
@@ -37,10 +37,12 @@ class VendorOrder {
     this.deliveryFee = 0,
     this.paymentMethod = PaymentMethod.card,
     this.specialInstructions,
+    this.cancelReason,
+    this.driverAtRestaurant = false,
   });
 
   final String id;
-  final int rawNumber;
+  final String orderNumber;
   final String customerName;
   final String customerPhone;
   final List<OrderItem> items;
@@ -54,16 +56,11 @@ class VendorOrder {
   final double deliveryFee;    // 0 for pickup
   final PaymentMethod paymentMethod;
   final String? specialInstructions;
-
-  String get orderNumber {
-    final prefix = switch (orderType) {
-      OrderType.pickup => 'P',
-      OrderType.delivery => 'D',
-      OrderType.scheduledPickup => 'SP',
-      OrderType.scheduledDelivery => 'SD',
-    };
-    return '#$prefix$rawNumber';
-  }
+  final String? cancelReason;
+  // Set the instant the driver taps "At Restaurant" — independent of
+  // `status`, so an early arrival doesn't jump the kitchen's own
+  // preparing/ready state forward. Used only to show a badge/notification.
+  final bool driverAtRestaurant;
 
   String get typeLabel => switch (orderType) {
         OrderType.pickup => 'Pickup',
@@ -84,10 +81,14 @@ class VendorOrder {
   double get total => (subtotal - discount + deliveryFee).clamp(0, double.infinity);
   int get itemCount => items.fold(0, (sum, i) => sum + i.qty);
 
-  VendorOrder copyWith({OrderStatus? status, int? estimatedMinutes}) =>
+  VendorOrder copyWith({
+    OrderStatus? status,
+    int? estimatedMinutes,
+    String? cancelReason,
+  }) =>
       VendorOrder(
         id: id,
-        rawNumber: rawNumber,
+        orderNumber: orderNumber,
         customerName: customerName,
         customerPhone: customerPhone,
         items: items,
@@ -101,5 +102,7 @@ class VendorOrder {
         deliveryFee: deliveryFee,
         paymentMethod: paymentMethod,
         specialInstructions: specialInstructions,
+        cancelReason: cancelReason ?? this.cancelReason,
+        driverAtRestaurant: driverAtRestaurant,
       );
 }
