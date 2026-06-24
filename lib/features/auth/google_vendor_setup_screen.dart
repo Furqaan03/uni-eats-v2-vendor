@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/constants/restaurants.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/vendor_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/utils/page_transitions.dart';
 import '../navigation/main_nav_shell.dart';
-import 'signup_screen.dart' show kVendorSignupRestaurants;
 
 /// Shown the first time a vendor signs in with a Google account that has no
 /// existing vendor record — picks which restaurant they manage, then
@@ -89,7 +89,7 @@ class _GoogleVendorSetupScreenState extends State<GoogleVendorSetupScreen> {
               const SizedBox(height: 24),
               Expanded(
                 child: ListView(
-                  children: kVendorSignupRestaurants.map((r) {
+                  children: kCampusRestaurants.map((r) {
                     final selected = _selected?.id == r.id;
                     return GestureDetector(
                       onTap: () => setState(() => _selected = r),

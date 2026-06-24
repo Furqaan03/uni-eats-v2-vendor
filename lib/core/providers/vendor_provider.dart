@@ -8,17 +8,25 @@ import '../../data/models/voucher.dart';
 import '../../data/repositories/orders_repository.dart';
 import '../../data/repositories/menu_repository.dart';
 import '../../services/firestore_order_service.dart';
+import '../constants/restaurants.dart';
 
 class VendorProvider extends ChangeNotifier {
   VendorProvider() {
-    _menuItems = _menuRepo.getForRestaurant(_activeVendorId);
     _seedInitialNotifications();
     _startOverdueWatcher();
     if (kUseFirebase) {
-      _subscribeToFirestore();
-      _loadPersistedMenu(_activeVendorId);
-      _loadPersistedRestaurantInfo(_activeVendorId);
+      // Real multi-vendor mode: there is no "this device's restaurant" yet —
+      // that's only known once the real vendor's session resolves and calls
+      // setRestaurant(). Subscribing here with the kVendorId placeholder
+      // used to mean every vendor's app briefly streamed/showed Tim Hortons'
+      // (r001) live orders and menu before login completed.
+      _menuItems = const [];
     } else {
+      // Offline/no-Firebase test mode: kVendorId is the intentional "which
+      // restaurant does this physical test device represent" switch — keep
+      // using it here, since there's no auth flow to derive it from.
+      _applyDefaultsFor(_activeVendorId);
+      _menuItems = _menuRepo.getForRestaurant(_activeVendorId);
       _orders = _ordersRepo.getAll();
     }
   }
@@ -37,9 +45,38 @@ class VendorProvider extends ChangeNotifier {
   // immediately if running without Firebase) — lets the dashboard avoid
   // flashing the "Open" default before the real persisted value loads.
   bool isStatusLoaded = !kUseFirebase;
-  String restaurantName = kVendorName;
-  String restaurantLocation = kVendorLocation;
-  String _activeVendorId = kVendorId;
+  // In Firebase mode there's no real restaurant until setRestaurant() runs
+  // after login — these placeholders are never shown for more than a frame
+  // since every screen that reads them sits behind the splash/login flow.
+  // In offline test mode, kVendorId/kVendorName ARE the real values (this
+  // device's single hardcoded test restaurant), so use them directly.
+  String restaurantName = kUseFirebase ? '' : kVendorName;
+  String restaurantLocation = kUseFirebase ? '' : kVendorLocation;
+  String _activeVendorId = kUseFirebase ? '' : kVendorId;
+
+  // Catalog profile fields the customer app needs to render this restaurant
+  // (category, delivery estimate, min order, delivery/pickup support).
+  // Pre-filled from kCampusRestaurantDefaults so the settings form — and any
+  // customer viewing this restaurant before the vendor has edited anything —
+  // shows sensible values instead of blanks/zeros. campusX/Y aren't included
+  // here: there's no map-pin-placement UI yet, so those always come straight
+  // from kCampusRestaurantDefaults regardless of Firestore.
+  String category = '';
+  String description = '';
+  int deliveryTimeMin = 10;
+  double minOrder = 0;
+  bool offersDelivery = true;
+  bool offersPickup = true;
+
+  void _applyDefaultsFor(String restaurantId) {
+    final d = kCampusRestaurantDefaults[restaurantId];
+    category = d?.category ?? '';
+    description = d?.description ?? '';
+    deliveryTimeMin = d?.deliveryTimeMin ?? 10;
+    minOrder = d?.minOrder ?? 0;
+    offersDelivery = d?.offersDelivery ?? true;
+    offersPickup = d?.offersPickup ?? true;
+  }
 
   /// Called after login to switch to the authenticated vendor's restaurant.
   void setRestaurant({
@@ -50,6 +87,7 @@ class VendorProvider extends ChangeNotifier {
     restaurantName = name;
     restaurantLocation = location;
     _activeVendorId = id;
+    _applyDefaultsFor(id);
     _menuItems = _menuRepo.getForRestaurant(id);
     _firestoreSub?.cancel();
     _orders = [];
@@ -71,6 +109,14 @@ class VendorProvider extends ChangeNotifier {
         if (info['location'] != null) restaurantLocation = info['location'] as String;
         if (info['isOpen'] != null) isOpen = info['isOpen'] as bool;
         if (info['isBusy'] != null) isBusy = info['isBusy'] as bool;
+        if (info['category'] != null) category = info['category'] as String;
+        if (info['description'] != null) description = info['description'] as String;
+        if (info['deliveryTimeMin'] != null) {
+          deliveryTimeMin = (info['deliveryTimeMin'] as num).toInt();
+        }
+        if (info['minOrder'] != null) minOrder = (info['minOrder'] as num).toDouble();
+        if (info['offersDelivery'] != null) offersDelivery = info['offersDelivery'] as bool;
+        if (info['offersPickup'] != null) offersPickup = info['offersPickup'] as bool;
         isAdminSuspended = info['adminSuspended'] as bool? ?? false;
       }
       isStatusLoaded = true;
@@ -374,6 +420,66 @@ class VendorProvider extends ChangeNotifier {
       FirestoreOrderService.instance
           .updateRestaurantInfo(_activeVendorId, location: location)
           .catchError((e) => debugPrint('[Firestore] updateRestaurantLocation failed: $e'));
+    }
+  }
+
+  void updateCategory(String value) {
+    category = value;
+    notifyListeners();
+    if (kUseFirebase) {
+      FirestoreOrderService.instance
+          .updateRestaurantInfo(_activeVendorId, category: value)
+          .catchError((e) => debugPrint('[Firestore] updateCategory failed: $e'));
+    }
+  }
+
+  void updateDescription(String value) {
+    description = value;
+    notifyListeners();
+    if (kUseFirebase) {
+      FirestoreOrderService.instance
+          .updateRestaurantInfo(_activeVendorId, description: value)
+          .catchError((e) => debugPrint('[Firestore] updateDescription failed: $e'));
+    }
+  }
+
+  void updateDeliveryTimeMin(int value) {
+    deliveryTimeMin = value;
+    notifyListeners();
+    if (kUseFirebase) {
+      FirestoreOrderService.instance
+          .updateRestaurantInfo(_activeVendorId, deliveryTimeMin: value)
+          .catchError((e) => debugPrint('[Firestore] updateDeliveryTimeMin failed: $e'));
+    }
+  }
+
+  void updateMinOrder(double value) {
+    minOrder = value;
+    notifyListeners();
+    if (kUseFirebase) {
+      FirestoreOrderService.instance
+          .updateRestaurantInfo(_activeVendorId, minOrder: value)
+          .catchError((e) => debugPrint('[Firestore] updateMinOrder failed: $e'));
+    }
+  }
+
+  void setOffersDelivery(bool value) {
+    offersDelivery = value;
+    notifyListeners();
+    if (kUseFirebase) {
+      FirestoreOrderService.instance
+          .updateRestaurantInfo(_activeVendorId, offersDelivery: value)
+          .catchError((e) => debugPrint('[Firestore] setOffersDelivery failed: $e'));
+    }
+  }
+
+  void setOffersPickup(bool value) {
+    offersPickup = value;
+    notifyListeners();
+    if (kUseFirebase) {
+      FirestoreOrderService.instance
+          .updateRestaurantInfo(_activeVendorId, offersPickup: value)
+          .catchError((e) => debugPrint('[Firestore] setOffersPickup failed: $e'));
     }
   }
 

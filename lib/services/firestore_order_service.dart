@@ -1,5 +1,6 @@
 ﻿import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../core/constants/restaurants.dart';
 import '../data/models/order.dart';
 
 // Set to true after Firebase setup. See PLAN.md.
@@ -14,22 +15,10 @@ const kUseFirebase = true;
 ///   r007 = L'Hardy          r008 = Ennabi 92
 const kVendorId = 'r001';
 
-/// Restaurant metadata keyed by vendor ID — mirrors the User app's restaurant list.
-const _kRestaurantInfo = <String, (String name, String location)>{
-  'r001': ('Tim Hortons', 'Building B3'),
-  'r002': ('Oakberry', 'Building B3'),
-  'r003': ('Edge Cafe', 'Building B9'),
-  'r004': ('Caribou Coffee', 'Building E4'),
-  'r005': ('JamKai', 'Building B20'),
-  'r006': ('Bold Café', 'Atrium 5'),
-  'r007': ("L'Hardy", 'Building B12'),
-  'r008': ('Ennabi 92', 'Building B4'),
-};
-
 String get kVendorName =>
-    _kRestaurantInfo[kVendorId]?.$1 ?? 'Vendor';
+    kCampusRestaurantInfo[kVendorId]?.$1 ?? 'Vendor';
 String get kVendorLocation =>
-    _kRestaurantInfo[kVendorId]?.$2 ?? 'UDST Campus';
+    kCampusRestaurantInfo[kVendorId]?.$2 ?? 'UDST Campus';
 
 // Mirrors the driver app's `_kMaxOrders` — how many concurrent deliveries
 // one driver can realistically carry.
@@ -104,19 +93,32 @@ class FirestoreOrderService {
     return snap.data();
   }
 
-  /// Persist a name/location/open/busy edit for [restaurantId].
+  /// Persist a catalog-profile edit for [restaurantId]. Only the fields
+  /// passed are written (merge: true) — the rest of the doc is untouched.
   Future<void> updateRestaurantInfo(
     String restaurantId, {
     String? name,
     String? location,
     bool? isOpen,
     bool? isBusy,
+    String? category,
+    String? description,
+    int? deliveryTimeMin,
+    double? minOrder,
+    bool? offersDelivery,
+    bool? offersPickup,
   }) async {
     await FirebaseFirestore.instance.collection('restaurants').doc(restaurantId).set({
       if (name != null) 'name': name,
       if (location != null) 'location': location,
       if (isOpen != null) 'isOpen': isOpen,
       if (isBusy != null) 'isBusy': isBusy,
+      if (category != null) 'category': category,
+      if (description != null) 'description': description,
+      if (deliveryTimeMin != null) 'deliveryTimeMin': deliveryTimeMin,
+      if (minOrder != null) 'minOrder': minOrder,
+      if (offersDelivery != null) 'offersDelivery': offersDelivery,
+      if (offersPickup != null) 'offersPickup': offersPickup,
     }, SetOptions(merge: true));
   }
 

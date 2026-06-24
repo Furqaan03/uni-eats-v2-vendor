@@ -1,25 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/constants/restaurants.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/vendor_provider.dart';
 import '../../widgets/app_logo.dart';
 import '../../core/utils/page_transitions.dart';
 import '../navigation/main_nav_shell.dart';
-
-// Restaurant choices that match the mock data — also reused by the Google
-// sign-in first-time setup screen.
-const kVendorSignupRestaurants = [
-  (id: 'r001', name: 'Tim Hortons', location: 'Building B3'),
-  (id: 'r002', name: 'Oakberry', location: 'Building B3'),
-  (id: 'r003', name: 'Edge Cafe', location: 'Building B9'),
-  (id: 'r004', name: 'Caribou Coffee', location: 'Building E4'),
-  (id: 'r005', name: 'JamKai', location: 'Building B20'),
-  (id: 'r006', name: 'Bold Café', location: 'Atrium 5'),
-  (id: 'r007', name: "L'Hardy", location: 'Building B12'),
-  (id: 'r008', name: 'Ennabi 92', location: 'Building B4'),
-];
-const _kRestaurants = kVendorSignupRestaurants;
 
 class VendorSignupScreen extends StatefulWidget {
   const VendorSignupScreen({super.key});
@@ -527,7 +514,7 @@ class _StepRestaurant extends StatelessWidget {
         const SizedBox(height: 4),
         _sectionSubtitle('Select the restaurant you work at.', context, textSecondary),
         const SizedBox(height: 24),
-        ..._kRestaurants.map((r) {
+        ...kCampusRestaurants.map((r) {
           final selected = selectedRestaurant?.id == r.id;
           return GestureDetector(
             onTap: () => onSelectRestaurant(r),

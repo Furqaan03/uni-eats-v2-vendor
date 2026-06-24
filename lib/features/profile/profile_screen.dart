@@ -86,6 +86,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  void _editNumber({
+    required String title,
+    required num current,
+    required void Function(num) onSave,
+  }) {
+    final ctrl = TextEditingController(text: current.toString());
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title, style: GoogleFonts.fredoka(fontSize: 20)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: InputDecoration(hintText: title),
+          style: GoogleFonts.plusJakartaSans(fontSize: 15),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final v = num.tryParse(ctrl.text.trim());
+              if (v != null && v >= 0) onSave(v);
+              Navigator.pop(ctx);
+            },
+            child: Text('Save',
+                style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _editHours() {
     showModalBottomSheet(
       context: context,
@@ -471,6 +507,58 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   label: 'Opening Hours',
                   subtitle: _hoursLabel,
                   onTap: _editHours,
+                ),
+                _SettingTile(
+                  icon: Icons.category_outlined,
+                  label: 'Category',
+                  subtitle: vendor.category.isEmpty ? 'Not set' : vendor.category,
+                  onTap: () => _editText(
+                    title: 'Category',
+                    current: vendor.category,
+                    onSave: (v) => vendor.updateCategory(v),
+                  ),
+                ),
+                _SettingTile(
+                  icon: Icons.description_outlined,
+                  label: 'Description',
+                  subtitle: vendor.description.isEmpty ? 'Not set' : vendor.description,
+                  onTap: () => _editText(
+                    title: 'Description',
+                    current: vendor.description,
+                    onSave: (v) => vendor.updateDescription(v),
+                  ),
+                ),
+                _SettingTile(
+                  icon: Icons.timer_outlined,
+                  label: 'Delivery Time Estimate',
+                  subtitle: '${vendor.deliveryTimeMin} min',
+                  onTap: () => _editNumber(
+                    title: 'Delivery Time (minutes)',
+                    current: vendor.deliveryTimeMin,
+                    onSave: (v) => vendor.updateDeliveryTimeMin(v.toInt()),
+                  ),
+                ),
+                _SettingTile(
+                  icon: Icons.payments_outlined,
+                  label: 'Minimum Order',
+                  subtitle: 'QAR ${vendor.minOrder.toStringAsFixed(2)}',
+                  onTap: () => _editNumber(
+                    title: 'Minimum Order (QAR)',
+                    current: vendor.minOrder,
+                    onSave: (v) => vendor.updateMinOrder(v.toDouble()),
+                  ),
+                ),
+                _ToggleTile(
+                  icon: Icons.delivery_dining_outlined,
+                  label: 'Offers Delivery',
+                  value: vendor.offersDelivery,
+                  onChanged: (v) => vendor.setOffersDelivery(v),
+                ),
+                _ToggleTile(
+                  icon: Icons.storefront_outlined,
+                  label: 'Offers Pickup',
+                  value: vendor.offersPickup,
+                  onChanged: (v) => vendor.setOffersPickup(v),
                 ),
               ],
             ),

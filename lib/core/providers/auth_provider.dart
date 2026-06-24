@@ -3,33 +3,6 @@ import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
-// Pre-existing test vendors that were previously authenticated against a
-// hardcoded plaintext password list. Kept ONLY so each of these 8 accounts
-// can self-migrate to a real Firebase Auth identity the first time they log
-// in with the password they already know — never compared/stored anywhere
-// after that point. New vendors never touch this map.
-const _kLegacyVendorAccounts = <String, (String password, String restaurantId)>{
-  'timhortons@testrun.qa': ('vendor123', 'r001'),
-  'oakberry@testrun.qa': ('vendor123', 'r002'),
-  'edgecafe@testrun.qa': ('vendor123', 'r003'),
-  'caribou@testrun.qa': ('vendor123', 'r004'),
-  'jamkai@testrun.qa': ('vendor123', 'r005'),
-  'boldcafe@testrun.qa': ('vendor123', 'r006'),
-  'lhardy@testrun.qa': ('vendor123', 'r007'),
-  'ennabi@testrun.qa': ('vendor123', 'r008'),
-};
-
-const _kRestaurantInfo = <String, (String name, String location)>{
-  'r001': ('Tim Hortons', 'Building B3'),
-  'r002': ('Oakberry', 'Building B3'),
-  'r003': ('Edge Cafe', 'Building B9'),
-  'r004': ('Caribou Coffee', 'Building E4'),
-  'r005': ('JamKai', 'Building B20'),
-  'r006': ('Bold Café', 'Atrium 5'),
-  'r007': ("L'Hardy", 'Building B12'),
-  'r008': ('Ennabi 92', 'Building B4'),
-};
-
 class VendorSession {
   final String email;
   final String restaurantId;
@@ -102,35 +75,10 @@ class VendorAuthProvider extends ChangeNotifier {
   Future<String?> signIn(String email, String password) async {
     final normalizedEmail = email.trim().toLowerCase();
     try {
-      fb.UserCredential cred;
-      try {
-        cred = await fb.FirebaseAuth.instance.signInWithEmailAndPassword(
-          email: normalizedEmail,
-          password: password,
-        );
-      } on fb.FirebaseAuthException catch (e) {
-        final legacy = _kLegacyVendorAccounts[normalizedEmail];
-        final isLegacyFirstLogin = legacy != null &&
-            legacy.$1 == password &&
-            (e.code == 'user-not-found' || e.code == 'invalid-credential');
-        if (!isLegacyFirstLogin) return 'Invalid email or password.';
-
-        // First real login for a pre-existing test account — create its
-        // Firebase Auth identity now, using the password it already uses.
-        cred = await fb.FirebaseAuth.instance.createUserWithEmailAndPassword(
-          email: normalizedEmail,
-          password: password,
-        );
-        final info = _kRestaurantInfo[legacy.$2]!;
-        await _createVendorDoc(
-          uid: cred.user!.uid,
-          email: normalizedEmail,
-          restaurantId: legacy.$2,
-          restaurantName: info.$1,
-          restaurantLocation: info.$2,
-          authProvider: 'password',
-        );
-      }
+      final cred = await fb.FirebaseAuth.instance.signInWithEmailAndPassword(
+        email: normalizedEmail,
+        password: password,
+      );
 
       final session = await _loadSession(cred.user!.uid, normalizedEmail);
       if (session == null) return 'No vendor profile found for this account.';
@@ -202,28 +150,6 @@ class VendorAuthProvider extends ChangeNotifier {
       final session = await _loadSession(cred.user!.uid, email);
       if (session != null) {
         _session = session;
-        notifyListeners();
-        return const GoogleVendorSignInResult();
-      }
-
-      // Legacy test account signing in via Google for the first time.
-      final legacy = _kLegacyVendorAccounts[email];
-      if (legacy != null) {
-        final info = _kRestaurantInfo[legacy.$2]!;
-        await _createVendorDoc(
-          uid: cred.user!.uid,
-          email: email,
-          restaurantId: legacy.$2,
-          restaurantName: info.$1,
-          restaurantLocation: info.$2,
-          authProvider: 'google',
-        );
-        _session = VendorSession(
-          email: email,
-          restaurantId: legacy.$2,
-          restaurantName: info.$1,
-          restaurantLocation: info.$2,
-        );
         notifyListeners();
         return const GoogleVendorSignInResult();
       }
