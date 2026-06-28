@@ -3,25 +3,41 @@ import '../models/order.dart';
 
 class AnalyticsRepository {
   /// Computes real analytics from the vendor's actual order history, scoped
-  /// to [period]. [avgRating] is passed in separately since there's no
-  /// customer rating submission system yet — it's the one field this repo
-  /// can't derive from order data alone.
+  /// to [period] — or, if both [customStart] and [customEnd] are given, to
+  /// that explicit "By Date" range instead (period is then only used for
+  /// the chart series granularity and comparison-window math doesn't apply,
+  /// since an arbitrary historical range has no natural "previous window").
+  /// [avgRating] is passed in separately since there's no customer rating
+  /// submission system yet — it's the one field this repo can't derive from
+  /// order data alone.
   AnalyticsSummary getSummary(
     List<VendorOrder> orders, {
     AnalyticsPeriod period = AnalyticsPeriod.weekly,
     double avgRating = 0,
+    DateTime? customStart,
+    DateTime? customEnd,
   }) {
     final now = DateTime.now();
+    final isCustomRange = customStart != null && customEnd != null;
     final delivered = orders.where((o) => o.status == OrderStatus.delivered).toList();
     final cancelled = orders.where((o) => o.status == OrderStatus.cancelled).toList();
 
-    final (windowStart, prevWindowStart) = _windowBounds(period, now);
-    final windowOrders = delivered.where((o) => o.placedAt.isAfter(windowStart)).toList();
-    final prevWindowOrders = delivered
-        .where((o) => o.placedAt.isAfter(prevWindowStart) && o.placedAt.isBefore(windowStart))
-        .toList();
-    final windowCancelled = cancelled.where((o) => o.placedAt.isAfter(windowStart)).toList();
-    final windowAllOrders = orders.where((o) => o.placedAt.isAfter(windowStart)).toList();
+    final (periodStart, prevWindowStart) = _windowBounds(period, now);
+    final windowStart = isCustomRange ? customStart : periodStart;
+    // Custom end is inclusive of the whole selected day.
+    final windowEnd = isCustomRange ? customEnd.add(const Duration(days: 1)) : now;
+
+    bool inWindow(VendorOrder o) =>
+        o.placedAt.isAfter(windowStart) && o.placedAt.isBefore(windowEnd);
+
+    final windowOrders = delivered.where(inWindow).toList();
+    final prevWindowOrders = isCustomRange
+        ? const <VendorOrder>[]
+        : delivered
+            .where((o) => o.placedAt.isAfter(prevWindowStart) && o.placedAt.isBefore(windowStart))
+            .toList();
+    final windowCancelled = cancelled.where(inWindow).toList();
+    final windowAllOrders = orders.where(inWindow).toList();
 
     final totalRevenue = windowOrders.fold(0.0, (sum, o) => sum + o.total);
     final totalOrders = windowOrders.length;
@@ -73,6 +89,16 @@ class AnalyticsRepository {
     final cancellationRate =
         windowAllOrders.isEmpty ? 0.0 : windowCancelled.length / windowAllOrders.length * 100;
 
+    // 'Rejected' = this restaurant declined before ever accepting it.
+    // 'Cancelled' = the customer cancelled it themselves. Both share
+    // VendorOrder.status == cancelled — cancelledBy is what tells them
+    // apart (see firestore.rules / order history Rejected/Cancelled split).
+    final outcomeStats = OutcomeStats(
+      completed: windowOrders.length,
+      cancelledByCustomer: windowCancelled.where((o) => !o.wasRejectedByVendor).length,
+      rejectedByVendor: windowCancelled.where((o) => o.wasRejectedByVendor).length,
+    );
+
     return AnalyticsSummary(
       period: period,
       totalRevenue: totalRevenue,
@@ -82,13 +108,49 @@ class AnalyticsRepository {
       topItem: topItem,
       revenueChange: revenueChange,
       ordersChange: ordersChange,
-      weeklyRevenue: _buildSeries(period, delivered, now),
+      weeklyRevenue: isCustomRange
+          ? _buildCustomSeries(customStart, customEnd, delivered)
+          : _buildSeries(period, delivered, now),
       topItems: topItems.take(5).toList(),
       discountStats: discountStats,
       orderTypeStats: orderTypeStats,
       cancelledOrders: windowCancelled.length,
       cancellationRate: cancellationRate,
+      outcomeStats: outcomeStats,
     );
+  }
+
+  /// One bar per day for a "By Date" range of up to 31 days; beyond that,
+  /// one bar per 7-day bucket so a multi-month range doesn't render
+  /// hundreds of slivers.
+  List<DailyRevenue> _buildCustomSeries(
+    DateTime start, DateTime end, List<VendorOrder> delivered,
+  ) {
+    final totalDays = end.difference(start).inDays + 1;
+    if (totalDays <= 31) {
+      return List.generate(totalDays, (i) {
+        final day = start.add(Duration(days: i));
+        final dayOrders = delivered.where((o) =>
+            o.placedAt.year == day.year && o.placedAt.month == day.month && o.placedAt.day == day.day);
+        return DailyRevenue(
+          label: '${day.day}/${day.month}',
+          amount: dayOrders.fold(0.0, (sum, o) => sum + o.total),
+          orders: dayOrders.length,
+        );
+      });
+    }
+    final buckets = (totalDays / 7).ceil();
+    return List.generate(buckets, (i) {
+      final bucketStart = start.add(Duration(days: 7 * i));
+      final bucketEnd = bucketStart.add(const Duration(days: 7));
+      final bucketOrders =
+          delivered.where((o) => o.placedAt.isAfter(bucketStart) && o.placedAt.isBefore(bucketEnd));
+      return DailyRevenue(
+        label: '${bucketStart.day}/${bucketStart.month}',
+        amount: bucketOrders.fold(0.0, (sum, o) => sum + o.total),
+        orders: bucketOrders.length,
+      );
+    });
   }
 
   /// Returns (currentWindowStart, previousWindowStart) for the comparison

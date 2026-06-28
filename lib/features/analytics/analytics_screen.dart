@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_constants.dart';
@@ -17,12 +19,38 @@ class AnalyticsScreen extends StatefulWidget {
 
 class _AnalyticsScreenState extends State<AnalyticsScreen> {
   AnalyticsPeriod _period = AnalyticsPeriod.weekly;
+  DateTimeRange? _customRange;
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 2),
+      lastDate: now,
+      initialDateRange: _customRange ??
+          DateTimeRange(start: now.subtract(const Duration(days: 7)), end: now),
+    );
+    if (picked != null) setState(() => _customRange = picked);
+  }
+
+  String get _windowLabel {
+    final range = _customRange;
+    if (range == null) return _period.windowLabel;
+    String fmt(DateTime d) => '${d.day}/${d.month}/${d.year}';
+    return '${fmt(range.start)} – ${fmt(range.end)}';
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final vendor = context.watch<VendorProvider>();
-    final summary = AnalyticsRepository().getSummary(vendor.orders, period: _period);
+    final range = _customRange;
+    final summary = AnalyticsRepository().getSummary(
+      vendor.orders,
+      period: _period,
+      customStart: range?.start,
+      customEnd: range?.end,
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Analytics')),
@@ -33,15 +61,35 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           children: [
             StaggeredFadeIn(
               index: 0,
-              child: _PeriodSelector(
-                selected: _period,
-                onChanged: (p) => setState(() => _period = p),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _PeriodSelector(
+                      selected: _period,
+                      onChanged: (p) => setState(() {
+                        _period = p;
+                        _customRange = null;
+                      }),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _ByDateButton(active: _customRange != null, onTap: _pickDateRange),
+                ],
               ),
             ),
             const SizedBox(height: 16),
             StaggeredFadeIn(
               index: 1,
-              child: Text(_period.windowLabel, style: theme.textTheme.titleMedium),
+              child: Row(
+                children: [
+                  Expanded(child: Text(_windowLabel, style: theme.textTheme.titleMedium)),
+                  if (_customRange != null)
+                    TextButton(
+                      onPressed: () => setState(() => _customRange = null),
+                      child: const Text('Clear'),
+                    ),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             StaggeredFadeIn(
@@ -51,46 +99,56 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
             const SizedBox(height: 24),
             StaggeredFadeIn(
               index: 3,
-              child: Text('Summary', style: theme.textTheme.titleMedium),
+              child: Text('Order Outcomes', style: theme.textTheme.titleMedium),
             ),
             const SizedBox(height: 12),
             StaggeredFadeIn(
               index: 4,
-              child: _SummaryGrid(summary: summary),
+              child: _OutcomeCard(stats: summary.outcomeStats),
             ),
             const SizedBox(height: 24),
             StaggeredFadeIn(
               index: 5,
-              child: Text('What People Bought', style: theme.textTheme.titleMedium),
+              child: Text('Summary', style: theme.textTheme.titleMedium),
             ),
             const SizedBox(height: 12),
             StaggeredFadeIn(
               index: 6,
-              child: _TopItemsCard(items: summary.topItems),
+              child: _SummaryGrid(summary: summary),
             ),
             const SizedBox(height: 24),
             StaggeredFadeIn(
               index: 7,
-              child: Text('Discounts', style: theme.textTheme.titleMedium),
+              child: Text('What People Bought', style: theme.textTheme.titleMedium),
             ),
             const SizedBox(height: 12),
             StaggeredFadeIn(
               index: 8,
-              child: _DiscountCard(stats: summary.discountStats),
+              child: _TopItemsCard(items: summary.topItems),
             ),
             const SizedBox(height: 24),
             StaggeredFadeIn(
               index: 9,
-              child: Text('Pickup vs Delivery', style: theme.textTheme.titleMedium),
+              child: Text('Discounts', style: theme.textTheme.titleMedium),
             ),
             const SizedBox(height: 12),
             StaggeredFadeIn(
               index: 10,
+              child: _DiscountCard(stats: summary.discountStats),
+            ),
+            const SizedBox(height: 24),
+            StaggeredFadeIn(
+              index: 11,
+              child: Text('Pickup vs Delivery', style: theme.textTheme.titleMedium),
+            ),
+            const SizedBox(height: 12),
+            StaggeredFadeIn(
+              index: 12,
               child: _OrderTypeCard(stats: summary.orderTypeStats),
             ),
             const SizedBox(height: 16),
             StaggeredFadeIn(
-              index: 11,
+              index: 13,
               child: _CancellationRow(summary: summary),
             ),
           ],
@@ -98,6 +156,258 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       ),
     );
   }
+}
+
+// ── "By Date" toggle ─────────────────────────────────────────────────────────
+
+class _ByDateButton extends StatelessWidget {
+  const _ByDateButton({required this.active, required this.onTap});
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: active
+          ? AppColors.primary
+          : (isDark ? AppColors.darkSurface : AppColors.lightSurface),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: active
+                  ? AppColors.primary
+                  : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.calendar_today_rounded,
+                  size: 14, color: active ? Colors.white : null),
+              const SizedBox(width: 6),
+              Text('By Date',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: active ? Colors.white : null,
+                  )),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Order outcome pie chart ─────────────────────────────────────────────────
+
+class _OutcomeCard extends StatefulWidget {
+  const _OutcomeCard({required this.stats});
+  final OutcomeStats stats;
+
+  @override
+  State<_OutcomeCard> createState() => _OutcomeCardState();
+}
+
+class _OutcomeCardState extends State<_OutcomeCard> {
+  int? _selected;
+
+  static const _slices = [
+    (label: 'Completed', color: AppColors.primary),
+    (label: 'Cancelled', color: AppColors.error),
+    (label: 'Rejected', color: AppColors.accent),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final stats = widget.stats;
+    final values = [stats.completed, stats.cancelledByCustomer, stats.rejectedByVendor];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: isDark ? AppColors.darkBorder : AppColors.lightBorder),
+      ),
+      child: stats.total == 0
+          ? Padding(
+              padding: const EdgeInsets.symmetric(vertical: 28),
+              child: Center(
+                child: Text('No orders in this period yet.',
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+              ),
+            )
+          : Row(
+              children: [
+                GestureDetector(
+                  onTapUp: (details) => setState(() {
+                    final tapped = _sliceAtOffset(details.localPosition, values);
+                    _selected = _selected == tapped ? null : tapped;
+                  }),
+                  child: SizedBox(
+                    width: 120,
+                    height: 120,
+                    child: CustomPaint(
+                      painter: _PieChartPainter(
+                        values: values,
+                        colors: _slices.map((s) => s.color).toList(),
+                        selectedIndex: _selected,
+                        holeColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 20),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (var i = 0; i < _slices.length; i++)
+                        Padding(
+                          padding: EdgeInsets.only(bottom: i < _slices.length - 1 ? 10 : 0),
+                          child: GestureDetector(
+                            onTap: () => setState(() => _selected = _selected == i ? null : i),
+                            child: _OutcomeLegendRow(
+                              color: _slices[i].color,
+                              label: _slices[i].label,
+                              count: values[i],
+                              share: stats.total == 0 ? 0 : values[i] / stats.total,
+                              isSelected: _selected == i,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  /// Maps a tap inside the chart's bounding box to the slice under it, by
+  /// re-deriving the same angle math the painter used to draw the wedges
+  /// (starting at 12 o'clock, sweeping clockwise).
+  int? _sliceAtOffset(Offset local, List<int> values) {
+    const size = 120.0;
+    const center = Offset(size / 2, size / 2);
+    final dx = local.dx - center.dx;
+    final dy = local.dy - center.dy;
+    const radius = size / 2;
+    if (dx * dx + dy * dy > radius * radius) return null;
+
+    var angle = math.atan2(dy, dx) + math.pi / 2;
+    if (angle < 0) angle += 2 * math.pi;
+
+    final total = values.fold(0, (a, b) => a + b);
+    if (total == 0) return null;
+    var acc = 0.0;
+    for (var i = 0; i < values.length; i++) {
+      acc += values[i] / total * 2 * math.pi;
+      if (angle <= acc) return i;
+    }
+    return values.length - 1;
+  }
+}
+
+class _OutcomeLegendRow extends StatelessWidget {
+  const _OutcomeLegendRow({
+    required this.color,
+    required this.label,
+    required this.count,
+    required this.share,
+    required this.isSelected,
+  });
+  final Color color;
+  final String label;
+  final int count;
+  final double share;
+  final bool isSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        Container(
+          width: 10,
+          height: 10,
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(label,
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(fontWeight: isSelected ? FontWeight.w800 : FontWeight.w500)),
+        ),
+        Text('$count',
+            style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(width: 6),
+        Text('(${(share * 100).toStringAsFixed(0)}%)',
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+      ],
+    );
+  }
+}
+
+class _PieChartPainter extends CustomPainter {
+  _PieChartPainter({
+    required this.values,
+    required this.colors,
+    required this.holeColor,
+    this.selectedIndex,
+  });
+  final List<int> values;
+  final List<Color> colors;
+  final Color holeColor;
+  final int? selectedIndex;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = values.fold(0, (a, b) => a + b);
+    if (total == 0) return;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    var startAngle = -math.pi / 2;
+
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] == 0) continue;
+      final sweep = values[i] / total * 2 * math.pi;
+      final isSelected = selectedIndex == i;
+      final r = isSelected ? radius : radius * 0.92;
+      final paint = Paint()
+        ..color = colors[i]
+        ..style = PaintingStyle.fill;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: r),
+        startAngle,
+        sweep,
+        true,
+        paint,
+      );
+      startAngle += sweep;
+    }
+
+    // Punches a visible donut hole, painted in the card's own background
+    // color — a transparent paint here would leave the arcs as a solid
+    // disc instead, since "transparent" just means "draw nothing."
+    canvas.drawCircle(center, radius * 0.5, Paint()..color = holeColor);
+  }
+
+  @override
+  bool shouldRepaint(_PieChartPainter oldDelegate) =>
+      oldDelegate.values != values ||
+      oldDelegate.selectedIndex != selectedIndex ||
+      oldDelegate.holeColor != holeColor;
 }
 
 // ── Period selector ─────────────────────────────────────────────────────────

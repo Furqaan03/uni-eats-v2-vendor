@@ -50,6 +50,23 @@ class DiscountStats {
   double get discountedShare => totalOrders == 0 ? 0 : discountedOrders / totalOrders;
 }
 
+/// Breaks down every order in the window by how it ended — delivered,
+/// cancelled by the customer, or rejected by this restaurant before
+/// acceptance. Backs the order-outcome pie chart.
+class OutcomeStats {
+  const OutcomeStats({
+    required this.completed,
+    required this.cancelledByCustomer,
+    required this.rejectedByVendor,
+  });
+
+  final int completed;
+  final int cancelledByCustomer;
+  final int rejectedByVendor;
+
+  int get total => completed + cancelledByCustomer + rejectedByVendor;
+}
+
 /// Breaks down orders by pickup vs. delivery.
 class OrderTypeStats {
   const OrderTypeStats({
@@ -83,6 +100,7 @@ class AnalyticsSummary {
     required this.orderTypeStats,
     required this.cancelledOrders,
     required this.cancellationRate,
+    required this.outcomeStats,
   });
 
   final AnalyticsPeriod period;
@@ -99,4 +117,5 @@ class AnalyticsSummary {
   final OrderTypeStats orderTypeStats;
   final int cancelledOrders;
   final double cancellationRate;
+  final OutcomeStats outcomeStats;
 }
