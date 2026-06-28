@@ -38,6 +38,7 @@ class VendorOrder {
     this.paymentMethod = PaymentMethod.card,
     this.specialInstructions,
     this.cancelReason,
+    this.cancelledBy,
     this.driverAtRestaurant = false,
     this.driverCancelReason,
     this.noDriversAvailable = false,
@@ -59,6 +60,12 @@ class VendorOrder {
   final PaymentMethod paymentMethod;
   final String? specialInstructions;
   final String? cancelReason;
+  // 'vendor' when this restaurant rejected the order pre-acceptance,
+  // 'customer' when the customer cancelled it themselves. Both share
+  // Firestore status 'cancelled' — this is the only thing that tells them
+  // apart for the History tab's Rejected/Cancelled split.
+  final String? cancelledBy;
+  bool get wasRejectedByVendor => cancelledBy == 'vendor';
   // Set the instant the driver taps "At Restaurant" — independent of
   // `status`, so an early arrival doesn't jump the kitchen's own
   // preparing/ready state forward. Used only to show a badge/notification.
@@ -94,6 +101,7 @@ class VendorOrder {
     OrderStatus? status,
     int? estimatedMinutes,
     String? cancelReason,
+    String? cancelledBy,
   }) =>
       VendorOrder(
         id: id,
@@ -112,6 +120,7 @@ class VendorOrder {
         paymentMethod: paymentMethod,
         specialInstructions: specialInstructions,
         cancelReason: cancelReason ?? this.cancelReason,
+        cancelledBy: cancelledBy ?? this.cancelledBy,
         driverAtRestaurant: driverAtRestaurant,
       );
 }

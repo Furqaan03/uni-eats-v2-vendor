@@ -208,21 +208,68 @@ class _ReadyTab extends StatelessWidget {
 
 // ── History tab ───────────────────────────────────────────────────────────────
 
-class _HistoryTab extends StatelessWidget {
+enum _HistorySubFilter { all, completed, cancelled, rejected }
+
+extension on _HistorySubFilter {
+  String get label => switch (this) {
+        _HistorySubFilter.all => 'All',
+        _HistorySubFilter.completed => 'Completed',
+        _HistorySubFilter.cancelled => 'Cancelled',
+        _HistorySubFilter.rejected => 'Rejected',
+      };
+
+  // 'Cancelled' here specifically means the customer cancelled it — a
+  // vendor-initiated decline is its own 'Rejected' bucket, even though both
+  // share Firestore status 'cancelled'. See VendorOrder.cancelledBy.
+  bool matches(VendorOrder o) => switch (this) {
+        _HistorySubFilter.all => true,
+        _HistorySubFilter.completed => o.status == OrderStatus.delivered,
+        _HistorySubFilter.cancelled =>
+          o.status == OrderStatus.cancelled && !o.wasRejectedByVendor,
+        _HistorySubFilter.rejected => o.status == OrderStatus.cancelled && o.wasRejectedByVendor,
+      };
+}
+
+class _HistoryTab extends StatefulWidget {
   const _HistoryTab({required this.orders});
   final List<VendorOrder> orders;
 
   @override
-  Widget build(BuildContext context) {
-    if (orders.isEmpty) {
-      return _EmptyState(
-        icon: Icons.history_rounded,
-        message: 'No history yet',
-        sub: 'Completed and cancelled orders will appear here.',
-      );
-    }
+  State<_HistoryTab> createState() => _HistoryTabState();
+}
 
-    // Group by date
+class _HistoryTabState extends State<_HistoryTab> {
+  _HistorySubFilter _filter = _HistorySubFilter.all;
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = widget.orders.where(_filter.matches).toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: AppSpacing.screenInsets.copyWith(top: 12, bottom: 4),
+          child: _HistoryFilterChips(
+            selected: _filter,
+            onChanged: (f) => setState(() => _filter = f),
+          ),
+        ),
+        Expanded(
+          child: filtered.isEmpty
+              ? _EmptyState(
+                  icon: Icons.history_rounded,
+                  message: widget.orders.isEmpty ? 'No history yet' : 'Nothing in ${_filter.label}',
+                  sub: widget.orders.isEmpty
+                      ? 'Completed, cancelled, and rejected orders will appear here.'
+                      : 'Try a different filter above.',
+                )
+              : _buildGroupedList(filtered),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildGroupedList(List<VendorOrder> orders) {
     final grouped = <String, List<VendorOrder>>{};
     for (final o in orders) {
       final key = _dayLabel(o.placedAt);
@@ -232,7 +279,7 @@ class _HistoryTab extends StatelessWidget {
     final sections = grouped.entries.toList();
 
     return ListView.builder(
-      padding: AppSpacing.screenInsets.copyWith(top: 16, bottom: 24),
+      padding: AppSpacing.screenInsets.copyWith(top: 12, bottom: 24),
       itemCount: sections.length,
       itemBuilder: (ctx, si) {
         final section = sections[si];
@@ -273,6 +320,58 @@ class _HistoryTab extends StatelessWidget {
   }
 }
 
+class _HistoryFilterChips extends StatelessWidget {
+  const _HistoryFilterChips({required this.selected, required this.onChanged});
+  final _HistorySubFilter selected;
+  final ValueChanged<_HistorySubFilter> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return SizedBox(
+      height: 34,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _HistorySubFilter.values.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (ctx, i) {
+          final filter = _HistorySubFilter.values[i];
+          final isSelected = filter == selected;
+          return GestureDetector(
+            onTap: () => onChanged(filter),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? AppColors.primary
+                    : (isDark ? AppColors.darkSurface : AppColors.lightSurface),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isSelected
+                      ? AppColors.primary
+                      : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                filter.label,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected
+                      ? Colors.white
+                      : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _HistoryCard extends StatelessWidget {
   const _HistoryCard({required this.order});
   final VendorOrder order;
@@ -282,8 +381,19 @@ class _HistoryCard extends StatelessWidget {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final isCancelled = order.status == OrderStatus.cancelled;
-    final statusColor = isCancelled ? AppColors.error : Colors.grey;
-    final statusLabel = isCancelled ? 'Cancelled' : 'Completed';
+    // Distinct colors for the two cancellation paths — amber for "we
+    // rejected it" (a restaurant decision, less alarming) vs red for "the
+    // customer backed out" (a real lost sale worth the customer's eye).
+    final statusColor = !isCancelled
+        ? Colors.grey
+        : order.wasRejectedByVendor
+            ? AppColors.accent
+            : AppColors.error;
+    final statusLabel = !isCancelled
+        ? 'Completed'
+        : order.wasRejectedByVendor
+            ? 'Rejected'
+            : 'Cancelled';
 
     return GestureDetector(
       onTap: () => Navigator.of(context)
