@@ -39,6 +39,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _notifOverdue = true;
   bool _notifPromos = false;
 
+  bool _hoursSyncedFromFirestore = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // One-time sync once persisted hours actually arrive — without this the
+    // "Open · 8:00 AM - 9:00 PM" subtitle below would always show this
+    // screen's hardcoded default, even after the vendor saved real hours in
+    // a previous session.
+    if (_hoursSyncedFromFirestore) return;
+    final vendor = context.read<VendorProvider>();
+    final persisted = _hoursFromFirestore(vendor.openingHours, _days);
+    if (persisted != null) {
+      _hoursSyncedFromFirestore = true;
+      setState(() => _hours = persisted);
+    }
+  }
+
   String get _hoursLabel {
     final openCount = _hours.values.where((h) => h.isOpen).length;
     if (openCount == 0) return 'Closed all days';
@@ -123,6 +141,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _editHours() {
+    final vendor = context.read<VendorProvider>();
+    // Persisted hours (if the vendor's ever saved before) take precedence
+    // over whatever this screen instance happened to default to locally —
+    // otherwise re-opening the sheet after a fresh app launch would show
+    // the hardcoded 8am-9pm default instead of what was actually saved.
+    final persisted = _hoursFromFirestore(vendor.openingHours, _days);
+    if (persisted != null) _hours = persisted;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -131,7 +157,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
       builder: (_) => _HoursSheet(
         hours: Map.of(_hours),
         days: _days,
-        onSave: (updated) => setState(() => _hours = updated),
+        onSave: (updated) {
+          setState(() => _hours = updated);
+          context.read<VendorProvider>().updateOpeningHours(_hoursToFirestore(updated));
+        },
       ),
     );
   }
@@ -485,11 +514,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 _SettingTile(
                   icon: Icons.store_outlined,
                   label: 'Restaurant Name',
-                  subtitle: vendor.restaurantName,
+                  subtitle: vendor.pendingNameChangeRequest?['status'] == 'pending'
+                      ? '${vendor.restaurantName} · pending approval: "${vendor.pendingNameChangeRequest!['requestedName']}"'
+                      : vendor.pendingNameChangeRequest?['status'] == 'rejected'
+                          ? '${vendor.restaurantName} · last request rejected'
+                          : vendor.restaurantName,
+                  // Name changes now go through admin approval (see
+                  // firestore.rules) — this opens a request instead of
+                  // writing the name directly.
                   onTap: () => _editText(
-                    title: 'Restaurant Name',
+                    title: 'Request Restaurant Name Change',
                     current: vendor.restaurantName,
-                    onSave: (v) => vendor.updateRestaurantName(v),
+                    onSave: (v) async {
+                      final error = await vendor.requestNameChange(v);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(error ?? 'Name change submitted for admin approval.'),
+                      ));
+                    },
                   ),
                 ),
                 _SettingTile(
@@ -858,6 +900,39 @@ class _DayHours {
         open: open ?? this.open,
         close: close ?? this.close,
       );
+
+  Map<String, dynamic> toMap() => {
+        'isOpen': isOpen,
+        'openMinutes': open.hour * 60 + open.minute,
+        'closeMinutes': close.hour * 60 + close.minute,
+      };
+
+  static _DayHours fromMap(Map<String, dynamic> m) {
+    final openMin = (m['openMinutes'] as num?)?.toInt() ?? 8 * 60;
+    final closeMin = (m['closeMinutes'] as num?)?.toInt() ?? 21 * 60;
+    return _DayHours(
+      isOpen: m['isOpen'] as bool? ?? true,
+      open: TimeOfDay(hour: openMin ~/ 60, minute: openMin % 60),
+      close: TimeOfDay(hour: closeMin ~/ 60, minute: closeMin % 60),
+    );
+  }
+}
+
+Map<String, dynamic> _hoursToFirestore(Map<String, _DayHours> hours) =>
+    hours.map((day, h) => MapEntry(day, h.toMap()));
+
+Map<String, _DayHours>? _hoursFromFirestore(Map<String, dynamic>? data, List<String> days) {
+  if (data == null) return null;
+  return {
+    for (final d in days)
+      d: data[d] is Map
+          ? _DayHours.fromMap(Map<String, dynamic>.from(data[d] as Map))
+          : _DayHours(
+              isOpen: d != 'Sun',
+              open: const TimeOfDay(hour: 8, minute: 0),
+              close: const TimeOfDay(hour: 21, minute: 0),
+            ),
+  };
 }
 
 // ── Opening hours bottom sheet ─────────────────────────────────────────────────
