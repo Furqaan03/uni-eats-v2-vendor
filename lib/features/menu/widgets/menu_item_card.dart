@@ -87,7 +87,10 @@ class MenuItemCard extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 6),
-                Row(
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 2,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     if (item.hasDiscount) ...[
                       Text(
@@ -95,7 +98,6 @@ class MenuItemCard extends StatelessWidget {
                         style: theme.textTheme.labelLarge
                             ?.copyWith(color: AppColors.primary),
                       ),
-                      const SizedBox(width: 5),
                       Text(
                         formatCurrency(item.price),
                         style: theme.textTheme.bodySmall?.copyWith(
@@ -104,7 +106,6 @@ class MenuItemCard extends StatelessWidget {
                           color: AppColors.error.withValues(alpha: 0.7),
                         ),
                       ),
-                      const SizedBox(width: 4),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                         decoration: BoxDecoration(
@@ -124,11 +125,9 @@ class MenuItemCard extends StatelessWidget {
                       Text(formatCurrency(item.price),
                           style: theme.textTheme.labelLarge
                               ?.copyWith(color: AppColors.primary)),
-                    if (item.calories != null) ...[
-                      const SizedBox(width: 8),
+                    if (item.calories != null)
                       Text('${item.calories} cal',
                           style: theme.textTheme.bodySmall),
-                    ],
                   ],
                 ),
               ],

@@ -152,15 +152,31 @@ class _PeriodSelector extends StatelessWidget {
 
 // ── Revenue chart ────────────────────────────────────────────────────────────
 
-class _RevenueChart extends StatelessWidget {
+class _RevenueChart extends StatefulWidget {
   const _RevenueChart({required this.data});
   final List<DailyRevenue> data;
+
+  @override
+  State<_RevenueChart> createState() => _RevenueChartState();
+}
+
+class _RevenueChartState extends State<_RevenueChart> {
+  int? _selected;
+
+  @override
+  void didUpdateWidget(_RevenueChart old) {
+    super.didUpdateWidget(old);
+    // Selection refers to a day index — stale once the period changes.
+    if (old.data != widget.data) _selected = null;
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final data = widget.data;
     final maxAmount = data.map((d) => d.amount).fold(0.0, (a, b) => a > b ? a : b);
+    final hasRevenue = maxAmount > 0;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -182,50 +198,97 @@ class _RevenueChart extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 120,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: data.map((day) {
-                final ratio = maxAmount > 0 ? day.amount / maxAmount : 0.0;
-                return Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
-                    child: Tooltip(
-                      message: '${formatCurrency(day.amount)} · ${day.orders} orders',
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Expanded(
-                            child: Align(
-                              alignment: Alignment.bottomCenter,
-                              child: FractionallySizedBox(
-                                heightFactor: ratio.clamp(0.04, 1.0),
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary,
-                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
-                                    gradient: LinearGradient(
-                                      colors: [AppColors.primaryLight, AppColors.primaryDark],
-                                      begin: Alignment.topCenter,
-                                      end: Alignment.bottomCenter,
+          // Tapped day's exact figures — replaces a long-press-only Tooltip
+          // that most users would never discover.
+          AnimatedSize(
+            duration: const Duration(milliseconds: 160),
+            alignment: Alignment.topLeft,
+            child: _selected == null
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '${data[_selected!].label}: ${formatCurrency(data[_selected!].amount)} · '
+                        '${data[_selected!].orders} order${data[_selected!].orders == 1 ? '' : 's'}',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: AppColors.primary, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 14),
+          if (!hasRevenue)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 28),
+              child: Center(
+                child: Text('No revenue in this period yet.',
+                    style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.outline)),
+              ),
+            )
+          else
+            SizedBox(
+              height: 120,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: data.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final day = entry.value;
+                  final ratio = maxAmount > 0 ? day.amount / maxAmount : 0.0;
+                  final isSelected = _selected == i;
+                  return Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(() => _selected = isSelected ? null : i),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.bottomCenter,
+                                child: FractionallySizedBox(
+                                  heightFactor: ratio.clamp(0.04, 1.0),
+                                  child: Container(
+                                    decoration: BoxDecoration(
+                                      borderRadius:
+                                          const BorderRadius.vertical(top: Radius.circular(6)),
+                                      gradient: LinearGradient(
+                                        colors: [AppColors.primaryLight, AppColors.primaryDark],
+                                        begin: Alignment.topCenter,
+                                        end: Alignment.bottomCenter,
+                                      ),
+                                      border: isSelected
+                                          ? Border.all(color: AppColors.accent, width: 2)
+                                          : null,
                                     ),
                                   ),
                                 ),
                               ),
                             ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(day.label, style: theme.textTheme.labelSmall, maxLines: 1),
-                        ],
+                            const SizedBox(height: 6),
+                            Text(
+                              day.label,
+                              style: theme.textTheme.labelSmall?.copyWith(
+                                fontWeight: isSelected ? FontWeight.w800 : null,
+                                color: isSelected ? AppColors.primary : null,
+                              ),
+                              maxLines: 1,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                );
-              }).toList(),
+                  );
+                }).toList(),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -371,6 +434,7 @@ class _TopItemsCard extends StatelessWidget {
     }
 
     final maxQty = items.map((i) => i.qty).reduce((a, b) => a > b ? a : b);
+    final totalRevenue = items.fold<double>(0, (s, i) => s + i.revenue);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -383,7 +447,10 @@ class _TopItemsCard extends StatelessWidget {
         children: [
           for (var i = 0; i < items.length; i++) ...[
             if (i > 0) const SizedBox(height: 12),
-            Row(
+            InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: () => _showItemDetail(context, items[i], rank: i + 1, totalRevenue: totalRevenue),
+              child: Row(
               children: [
                 Container(
                   width: 26,
@@ -436,11 +503,78 @@ class _TopItemsCard extends StatelessWidget {
                         style: theme.textTheme.bodySmall?.copyWith(color: AppColors.primary)),
                   ],
                 ),
+                const SizedBox(width: 4),
+                Icon(Icons.chevron_right_rounded, size: 16, color: theme.colorScheme.outline),
               ],
+              ),
             ),
           ],
         ],
       ),
+    );
+  }
+
+  void _showItemDetail(BuildContext context, TopItemStat item,
+      {required int rank, required double totalRevenue}) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final share = totalRevenue == 0 ? 0.0 : item.revenue / totalRevenue;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: isDark ? AppColors.darkSurface : AppColors.lightSurface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(item.name, style: Theme.of(ctx).textTheme.titleMedium),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppColors.star.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text('#$rank best seller',
+                      style: const TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.star)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _ItemDetailRow(label: 'Units sold', value: '${item.qty}'),
+            const SizedBox(height: 8),
+            _ItemDetailRow(label: 'Revenue', value: formatCurrency(item.revenue)),
+            const SizedBox(height: 8),
+            _ItemDetailRow(
+                label: 'Share of top-sellers revenue', value: '${(share * 100).toStringAsFixed(0)}%'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ItemDetailRow extends StatelessWidget {
+  const _ItemDetailRow({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.outline)),
+        Text(value, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700)),
+      ],
     );
   }
 }

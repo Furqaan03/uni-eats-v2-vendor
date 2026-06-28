@@ -39,6 +39,8 @@ class VendorOrder {
     this.specialInstructions,
     this.cancelReason,
     this.driverAtRestaurant = false,
+    this.driverCancelReason,
+    this.noDriversAvailable = false,
   });
 
   final String id;
@@ -61,6 +63,13 @@ class VendorOrder {
   // `status`, so an early arrival doesn't jump the kitchen's own
   // preparing/ready state forward. Used only to show a badge/notification.
   final bool driverAtRestaurant;
+  // Set when a driver gives up the delivery before pickup (status reverts
+  // to 'awaitingDriver') — distinguishes a real cancellation from the
+  // order's normal initial wait for its first driver.
+  final String? driverCancelReason;
+  // True if, after a driver gave up (or every online driver declined), no
+  // other driver is currently online with a free slot to take over.
+  final bool noDriversAvailable;
 
   String get typeLabel => switch (orderType) {
         OrderType.pickup => 'Pickup',

@@ -221,6 +221,7 @@ class VendorProvider extends ChangeNotifier {
         .listen((incoming) {
       final previousStatusById = {for (final o in _orders) o.id: o.status};
       final previousArrivedById = {for (final o in _orders) o.id: o.driverAtRestaurant};
+      final previousNoDriversById = {for (final o in _orders) o.id: o.noDriversAvailable};
 
       // Merge incoming orders — add new ones, push a notification for truly new orders
       final newOrders =
@@ -265,6 +266,17 @@ class VendorProvider extends ChangeNotifier {
             body: '${o.orderNumber} for ${o.customerName} now has a driver. You can start cooking.',
             orderId: o.id,
           );
+        } else if (o.status == OrderStatus.awaitingDriver && o.driverCancelReason != null) {
+          // Driver gave up before pickup — order is back in the
+          // available-orders pool. Distinct from the initial post-accept
+          // 'awaitingDriver' wait, which never carries a driverCancelReason.
+          _push(
+            type: NotificationType.orderOverdue,
+            title: 'Driver Cancelled',
+            body: '${o.orderNumber} for ${o.customerName} lost its driver (${o.driverCancelReason}). '
+                'Looking for a replacement.',
+            orderId: o.id,
+          );
         } else if (o.status == OrderStatus.onTheWay) {
           // Fires once the driver has actually picked the order up and left
           // — "Driver Arrived" already fired separately above, earlier.
@@ -280,6 +292,26 @@ class VendorProvider extends ChangeNotifier {
             title: 'Order Delivered',
             body:
                 '${o.orderNumber} has been delivered to ${o.customerName}. +QAR ${o.total.toStringAsFixed(2)}',
+            orderId: o.id,
+          );
+        }
+      }
+
+      // No driver online to take over — fires whether this came from a
+      // driver abandoning mid-delivery or every online driver declining a
+      // fresh order. The vendor is the one in a position to actually reach
+      // the customer (call/text) about picking up themselves or cancelling,
+      // so they need to know right away rather than finding out when the
+      // customer eventually complains.
+      for (final o in incoming) {
+        if (!o.isDelivery) continue;
+        final wasNoDrivers = previousNoDriversById[o.id] ?? false;
+        if (!wasNoDrivers && o.noDriversAvailable) {
+          _push(
+            type: NotificationType.orderOverdue,
+            title: 'No Drivers Available',
+            body: '${o.orderNumber} for ${o.customerName} has no driver and none are free. '
+                'Consider calling/texting the customer about picking up themselves.',
             orderId: o.id,
           );
         }

@@ -203,7 +203,7 @@ class FirestoreOrderService {
       id: d['id'] as String,
       orderNumber: d['orderNumber'] as String? ?? '#${d['id']}',
       customerName: d['customerName'] as String? ?? 'Customer',
-      customerPhone: '',
+      customerPhone: d['customerPhone'] as String? ?? '',
       items: items,
       status: status,
       placedAt: (d['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
@@ -214,6 +214,8 @@ class FirestoreOrderService {
       discount: discount,
       cancelReason: d['cancelReason'] as String?,
       driverAtRestaurant: d['driverAtRestaurant'] as bool? ?? false,
+      driverCancelReason: d['driverCancelReason'] as String?,
+      noDriversAvailable: d['noDriversAvailable'] as bool? ?? false,
     );
   }
 

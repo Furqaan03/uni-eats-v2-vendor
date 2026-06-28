@@ -3,6 +3,13 @@ import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+/// Thrown when a vendor signup tries to claim a restaurant another vendor
+/// account already owns.
+class RestaurantAlreadyClaimedException implements Exception {
+  @override
+  String toString() => 'This restaurant already has a vendor account.';
+}
+
 class VendorSession {
   final String email;
   final String restaurantId;
@@ -53,6 +60,17 @@ class VendorAuthProvider extends ChangeNotifier {
     );
   }
 
+  /// Claims restaurants/{restaurantId}.ownerUid for [uid], then creates the
+  /// vendor profile doc. The claim must land first and succeed — the
+  /// Firestore rule for `vendors/{vendorUid}` create now requires it to
+  /// already match this uid, which is what actually stops a second vendor
+  /// account from claiming a restaurant someone else already runs (the
+  /// previous rule only checked `request.auth.uid == vendorUid`, trusting
+  /// whatever restaurantId the new doc claimed for itself).
+  ///
+  /// Throws [RestaurantAlreadyClaimedException] if another vendor already
+  /// owns this restaurant — callers should surface that distinctly from a
+  /// generic signup failure.
   Future<void> _createVendorDoc({
     required String uid,
     required String email,
@@ -60,8 +78,20 @@ class VendorAuthProvider extends ChangeNotifier {
     required String restaurantName,
     required String restaurantLocation,
     required String authProvider,
-  }) {
-    return _vendorsCol.doc(uid).set({
+  }) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('restaurants')
+          .doc(restaurantId)
+          .set({'ownerUid': uid}, SetOptions(merge: true));
+    } on FirebaseException catch (e) {
+      if (e.code == 'permission-denied') {
+        throw RestaurantAlreadyClaimedException();
+      }
+      rethrow;
+    }
+
+    await _vendorsCol.doc(uid).set({
       'email': email,
       'restaurantId': restaurantId,
       'restaurantName': restaurantName,
@@ -129,6 +159,8 @@ class VendorAuthProvider extends ChangeNotifier {
       return e.code == 'email-already-in-use'
           ? 'An account with this email already exists.'
           : e.message ?? 'Could not create your account. Please try again.';
+    } on RestaurantAlreadyClaimedException catch (e) {
+      return e.toString();
     } catch (e) {
       return 'Could not create your account — check your connection and try again.';
     }
@@ -190,6 +222,8 @@ class VendorAuthProvider extends ChangeNotifier {
       );
       notifyListeners();
       return null;
+    } on RestaurantAlreadyClaimedException catch (e) {
+      return e.toString();
     } catch (e) {
       return 'Could not create your account — check your connection and try again.';
     }
