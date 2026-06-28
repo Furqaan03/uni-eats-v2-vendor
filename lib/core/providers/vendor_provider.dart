@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../data/models/order.dart';
@@ -35,6 +36,8 @@ class VendorProvider extends ChangeNotifier {
   final _menuRepo = MenuRepository();
   Timer? _overdueTimer;
   StreamSubscription<List<VendorOrder>>? _firestoreSub;
+  StreamSubscription<List<Voucher>>? _voucherSub;
+  StreamSubscription<List<Map<String, dynamic>>>? _nameChangeSub;
 
   bool isOpen = true;
   bool isBusy = false;
@@ -67,6 +70,9 @@ class VendorProvider extends ChangeNotifier {
   double minOrder = 0;
   bool offersDelivery = true;
   bool offersPickup = true;
+  // {day3Letter: {isOpen, openMinutes, closeMinutes}} — null until either
+  // Firestore has loaded or the vendor has saved hours at least once.
+  Map<String, dynamic>? openingHours;
 
   void _applyDefaultsFor(String restaurantId) {
     final d = kCampusRestaurantDefaults[restaurantId];
@@ -90,14 +96,31 @@ class VendorProvider extends ChangeNotifier {
     _applyDefaultsFor(id);
     _menuItems = _menuRepo.getForRestaurant(id);
     _firestoreSub?.cancel();
+    _voucherSub?.cancel();
+    _nameChangeSub?.cancel();
     _orders = [];
     if (kUseFirebase) {
       isStatusLoaded = false;
       _subscribeToFirestore();
       _loadPersistedMenu(id);
       _loadPersistedRestaurantInfo(id);
+      _subscribeToVouchers(id);
+      _subscribeToNameChangeRequests(id);
     }
     notifyListeners();
+  }
+
+  /// Streams this restaurant's own voucher codes from Firestore — replaces
+  /// the old hardcoded local list (WELCOME10/SAVE5 baked into this file)
+  /// that the Promotions screen edited but never actually persisted, so
+  /// vendor edits never reached the customer checkout that validates codes
+  /// against the real `vouchers/{code}` collection.
+  void _subscribeToVouchers(String restaurantId) {
+    _voucherSub = FirestoreOrderService.instance.streamVouchers(restaurantId).listen((vouchers) {
+      if (restaurantId != _activeVendorId) return;
+      _vouchers = vouchers;
+      notifyListeners();
+    }, onError: (Object e) => debugPrint('[Firestore] streamVouchers failed: $e'));
   }
 
   Future<void> _loadPersistedRestaurantInfo(String restaurantId) async {
@@ -117,6 +140,9 @@ class VendorProvider extends ChangeNotifier {
         if (info['minOrder'] != null) minOrder = (info['minOrder'] as num).toDouble();
         if (info['offersDelivery'] != null) offersDelivery = info['offersDelivery'] as bool;
         if (info['offersPickup'] != null) offersPickup = info['offersPickup'] as bool;
+        if (info['openingHours'] != null) {
+          openingHours = Map<String, dynamic>.from(info['openingHours'] as Map);
+        }
         isAdminSuspended = info['adminSuspended'] as bool? ?? false;
       }
       isStatusLoaded = true;
@@ -167,10 +193,7 @@ class VendorProvider extends ChangeNotifier {
   List<VendorOrder> _orders = [];
   late List<MenuItem> _menuItems;
   final List<VendorNotification> _notifications = [];
-  final List<Voucher> _vouchers = [
-    Voucher(id: 'v1', code: 'WELCOME10', type: VoucherType.percentage, value: 10, minOrderAmount: 0),
-    Voucher(id: 'v2', code: 'SAVE5', type: VoucherType.flat, value: 5, minOrderAmount: 20),
-  ];
+  List<Voucher> _vouchers = [];
 
   // ── Order getters ─────────────────────────────────────────────────────────
 
@@ -401,7 +424,10 @@ class VendorProvider extends ChangeNotifier {
     if (order == null) return;
     _orders = [
       for (final o in _orders)
-        if (o.id == id) o.copyWith(status: OrderStatus.cancelled, cancelReason: reason) else o,
+        if (o.id == id)
+          o.copyWith(status: OrderStatus.cancelled, cancelReason: reason, cancelledBy: 'vendor')
+        else
+          o,
     ];
     _push(
       type: NotificationType.orderCancelled,
@@ -435,13 +461,49 @@ class VendorProvider extends ChangeNotifier {
         OrderStatus.cancelled => 'cancelled',
       };
 
-  void updateRestaurantName(String name) {
-    restaurantName = name;
+  // The restaurant's displayed name now requires admin approval — see
+  // firestore.rules, which carves `name` out of the vendor's normal write
+  // access to their own restaurant doc. `restaurantName` here is left
+  // untouched until the request is actually approved and the Firestore
+  // listener picks up the real change; `pendingNameChangeRequest` surfaces
+  // the in-flight/rejected state in the meantime.
+  Map<String, dynamic>? pendingNameChangeRequest;
+
+  Future<String?> requestNameChange(String name) async {
+    final uid = fb.FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return 'Not signed in.';
+    try {
+      await FirestoreOrderService.instance.submitNameChangeRequest(
+        restaurantId: _activeVendorId,
+        requestedName: name,
+        requestedBy: uid,
+      );
+      return null;
+    } catch (e) {
+      debugPrint('[Firestore] requestNameChange failed: $e');
+      return 'Could not submit your request. Please try again.';
+    }
+  }
+
+  void _subscribeToNameChangeRequests(String restaurantId) {
+    _nameChangeSub = FirestoreOrderService.instance.streamNameChangeRequests(restaurantId).listen((requests) {
+      if (restaurantId != _activeVendorId) return;
+      pendingNameChangeRequest =
+          requests.cast<Map<String, dynamic>?>().firstWhere(
+                (r) => r!['status'] == 'pending',
+                orElse: () => requests.isNotEmpty ? requests.first : null,
+              );
+      notifyListeners();
+    }, onError: (Object e) => debugPrint('[Firestore] streamNameChangeRequests failed: $e'));
+  }
+
+  void updateOpeningHours(Map<String, dynamic> hours) {
+    openingHours = hours;
     notifyListeners();
     if (kUseFirebase) {
       FirestoreOrderService.instance
-          .updateRestaurantInfo(_activeVendorId, name: name)
-          .catchError((e) => debugPrint('[Firestore] updateRestaurantName failed: $e'));
+          .updateRestaurantInfo(_activeVendorId, openingHours: hours)
+          .catchError((e) => debugPrint('[Firestore] updateOpeningHours failed: $e'));
     }
   }
 
@@ -556,33 +618,52 @@ class VendorProvider extends ChangeNotifier {
   }
 
   // ── Voucher management ────────────────────────────────────────────────────
+  //
+  // `_vouchers` is now driven entirely by _subscribeToVouchers' live
+  // Firestore stream — these methods only write through to Firestore (doc
+  // ID = code, pinned to this restaurant) and let the stream's own snapshot
+  // update `_vouchers` + notify, instead of mutating local state directly
+  // and risking it drifting from what's actually persisted.
 
   List<Voucher> get vouchers => List.unmodifiable(_vouchers);
 
   void addVoucher(Voucher v) {
-    _vouchers.add(v);
-    notifyListeners();
+    if (!kUseFirebase) {
+      _vouchers = [..._vouchers, v];
+      notifyListeners();
+      return;
+    }
+    FirestoreOrderService.instance
+        .upsertVoucher(v.copyWith()..restaurantId = _activeVendorId)
+        .catchError((e) => debugPrint('[Firestore] addVoucher failed: $e'));
   }
 
   void updateVoucher(Voucher updated) {
-    final idx = _vouchers.indexWhere((v) => v.id == updated.id);
-    if (idx != -1) {
-      _vouchers[idx] = updated;
+    if (!kUseFirebase) {
+      _vouchers = [for (final v in _vouchers) if (v.id == updated.id) updated else v];
       notifyListeners();
+      return;
     }
+    FirestoreOrderService.instance
+        .upsertVoucher(updated.copyWith()..restaurantId = _activeVendorId)
+        .catchError((e) => debugPrint('[Firestore] updateVoucher failed: $e'));
   }
 
   void deleteVoucher(String id) {
-    _vouchers.removeWhere((v) => v.id == id);
-    notifyListeners();
+    if (!kUseFirebase) {
+      _vouchers = _vouchers.where((v) => v.id != id).toList();
+      notifyListeners();
+      return;
+    }
+    FirestoreOrderService.instance
+        .deleteVoucherDoc(id)
+        .catchError((e) => debugPrint('[Firestore] deleteVoucher failed: $e'));
   }
 
   void toggleVoucher(String id) {
-    final idx = _vouchers.indexWhere((v) => v.id == id);
-    if (idx != -1) {
-      _vouchers[idx] = _vouchers[idx].copyWith(isActive: !_vouchers[idx].isActive);
-      notifyListeners();
-    }
+    final voucher = _vouchers.cast<Voucher?>().firstWhere((v) => v!.id == id, orElse: () => null);
+    if (voucher == null) return;
+    updateVoucher(voucher.copyWith(isActive: !voucher.isActive));
   }
 
   void setItemDiscount(String itemId, double? percent) {

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:uuid/uuid.dart';
 import '../../core/providers/vendor_provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../data/models/menu_item.dart';
@@ -230,20 +229,23 @@ class _VoucherFormState extends State<_VoucherForm> {
   void _save() {
     if (!_formKey.currentState!.validate()) return;
     final vendor = context.read<VendorProvider>();
-    final code = _codeCtrl.text.trim().toUpperCase();
     final value = double.parse(_valueCtrl.text.trim());
     final min = double.tryParse(_minCtrl.text.trim()) ?? 0;
 
     if (widget.existing != null) {
+      // Code is immutable past creation (see the read-only field below) —
+      // Firestore's doc ID for a voucher IS its code, so changing it here
+      // would silently create a second document and leave the old code
+      // active and unmanaged rather than renaming anything.
       vendor.updateVoucher(widget.existing!.copyWith(
-        code: code,
         type: _type,
         value: value,
         minOrderAmount: min,
       ));
     } else {
+      final code = _codeCtrl.text.trim().toUpperCase();
       vendor.addVoucher(Voucher(
-        id: const Uuid().v4(),
+        id: code,
         code: code,
         type: _type,
         value: value,
@@ -281,10 +283,13 @@ class _VoucherFormState extends State<_VoucherForm> {
             const SizedBox(height: 16),
             TextFormField(
               controller: _codeCtrl,
+              enabled: widget.existing == null,
               textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(
-                  labelText: 'Voucher Code',
-                  hintText: 'e.g. SAVE10'),
+              decoration: InputDecoration(
+                labelText: 'Voucher Code',
+                hintText: 'e.g. SAVE10',
+                helperText: widget.existing != null ? "Can't be changed after creation" : null,
+              ),
               validator: (v) =>
                   (v == null || v.trim().isEmpty) ? 'Required' : null,
             ),

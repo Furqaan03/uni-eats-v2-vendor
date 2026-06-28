@@ -2,6 +2,7 @@
 
 import '../core/constants/restaurants.dart';
 import '../data/models/order.dart';
+import '../data/models/voucher.dart';
 
 // Set to true after Firebase setup. See PLAN.md.
 const kUseFirebase = true;
@@ -53,26 +54,31 @@ class FirestoreOrderService {
       FirebaseFirestore.instance.collection('orders');
 
   /// Real-time stream of orders for this vendor, sorted newest first.
-  /// Filters and sorts client-side to avoid requiring a Firestore composite index.
+  /// Sorts client-side to avoid requiring a Firestore composite index.
+  /// Includes cancelled orders — VendorProvider's `activeOrders` getter is
+  /// what excludes them from the live boards; the History tab needs them
+  /// here to show Cancelled/Rejected at all.
   Stream<List<VendorOrder>> streamVendorOrders(String vendorId) {
     return _col
         .where('vendorId', isEqualTo: vendorId)
         .snapshots()
         .map((snap) {
-          final orders = snap.docs
-              .map((d) => _fromFirestore(d.data()))
-              .where((o) => o.status != OrderStatus.cancelled)
-              .toList()
+          final orders = snap.docs.map((d) => _fromFirestore(d.data())).toList()
             ..sort((a, b) => b.placedAt.compareTo(a.placedAt));
           return orders;
         });
   }
 
-  /// Push a status update for an order.
+  /// Push a status update for an order. `cancelledBy: 'vendor'` on a
+  /// cancellation distinguishes "I rejected this" from "the customer
+  /// cancelled it" — both share Firestore status 'cancelled', so without
+  /// this tag the order-history Rejected/Cancelled split couldn't tell them
+  /// apart after the fact.
   Future<void> updateOrderStatus(String orderId, String status, {String? cancelReason}) async {
     await _col.doc(orderId).update({
       'status': status,
       if (cancelReason != null) 'cancelReason': cancelReason,
+      if (status == 'cancelled') 'cancelledBy': 'vendor',
     });
   }
 
@@ -107,6 +113,7 @@ class FirestoreOrderService {
     double? minOrder,
     bool? offersDelivery,
     bool? offersPickup,
+    Map<String, dynamic>? openingHours,
   }) async {
     await FirebaseFirestore.instance.collection('restaurants').doc(restaurantId).set({
       if (name != null) 'name': name,
@@ -119,7 +126,67 @@ class FirestoreOrderService {
       if (minOrder != null) 'minOrder': minOrder,
       if (offersDelivery != null) 'offersDelivery': offersDelivery,
       if (offersPickup != null) 'offersPickup': offersPickup,
+      if (openingHours != null) 'openingHours': openingHours,
     }, SetOptions(merge: true));
+  }
+
+  CollectionReference<Map<String, dynamic>> get _nameChangeRequestsCol =>
+      FirebaseFirestore.instance.collection('nameChangeRequests');
+
+  /// Submits a name change for admin approval — restaurants/{id}.name is no
+  /// longer vendor-writable directly (see firestore.rules), so this opens a
+  /// request doc instead. Returns the new request's doc ID.
+  Future<String> submitNameChangeRequest({
+    required String restaurantId,
+    required String requestedName,
+    required String requestedBy,
+  }) async {
+    final doc = _nameChangeRequestsCol.doc();
+    await doc.set({
+      'restaurantId': restaurantId,
+      'requestedName': requestedName,
+      'requestedBy': requestedBy,
+      'status': 'pending',
+      'createdAt': FieldValue.serverTimestamp(),
+    });
+    return doc.id;
+  }
+
+  /// Live stream of this restaurant's name-change requests, newest first —
+  /// used to show "pending approval" / "rejected" state in the profile UI.
+  Stream<List<Map<String, dynamic>>> streamNameChangeRequests(String restaurantId) {
+    return _nameChangeRequestsCol.where('restaurantId', isEqualTo: restaurantId).snapshots().map(
+        (snap) => snap.docs.map((d) => {...d.data(), 'id': d.id}).toList()
+          ..sort((a, b) {
+            final at = a['createdAt'] as Timestamp?;
+            final bt = b['createdAt'] as Timestamp?;
+            if (at == null || bt == null) return 0;
+            return bt.compareTo(at);
+          }));
+  }
+
+  CollectionReference<Map<String, dynamic>> get _vouchersCol =>
+      FirebaseFirestore.instance.collection('vouchers');
+
+  /// Live stream of this restaurant's own voucher codes — the customer
+  /// checkout reads the same root `vouchers/{code}` collection, scoped by
+  /// restaurantId, so an edit here is the actual edit the customer sees
+  /// (no more separate in-memory list that never left this app).
+  Stream<List<Voucher>> streamVouchers(String restaurantId) {
+    return _vouchersCol
+        .where('restaurantId', isEqualTo: restaurantId)
+        .snapshots()
+        .map((snap) => snap.docs.map((d) => Voucher.fromMap(d.id, d.data())).toList());
+  }
+
+  /// Create or overwrite a voucher. Doc ID is the code itself, uppercased to
+  /// match what checkout_screen.dart looks up on the customer side.
+  Future<void> upsertVoucher(Voucher voucher) async {
+    await _vouchersCol.doc(voucher.code.trim().toUpperCase()).set(voucher.toMap());
+  }
+
+  Future<void> deleteVoucherDoc(String code) async {
+    await _vouchersCol.doc(code.trim().toUpperCase()).delete();
   }
 
   CollectionReference<Map<String, dynamic>> _menuItemsCol(String restaurantId) =>
@@ -213,6 +280,7 @@ class FirestoreOrderService {
       deliveryFee: (d['deliveryFee'] as num?)?.toDouble() ?? 0,
       discount: discount,
       cancelReason: d['cancelReason'] as String?,
+      cancelledBy: d['cancelledBy'] as String?,
       driverAtRestaurant: d['driverAtRestaurant'] as bool? ?? false,
       driverCancelReason: d['driverCancelReason'] as String?,
       noDriversAvailable: d['noDriversAvailable'] as bool? ?? false,
