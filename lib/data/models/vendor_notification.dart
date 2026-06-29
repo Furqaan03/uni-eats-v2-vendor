@@ -11,6 +11,8 @@ enum NotificationType {
   restaurantClosed,
   busyModeOn,
   busyModeOff,
+  customerUnreachable,
+  driverIncident,
 }
 
 class VendorNotification {

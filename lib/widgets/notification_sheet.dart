@@ -96,6 +96,8 @@ class _NotificationSheet extends StatelessWidget {
       case NotificationType.orderDelivered:
       case NotificationType.orderCancelled:
       case NotificationType.orderOverdue:
+      case NotificationType.customerUnreachable:
+      case NotificationType.driverIncident:
         Navigator.pop(context); // close sheet
         if (orderId != null) {
           Navigator.of(context).push(fadeSlidePage(OrderDetailScreen(orderId: orderId)));
@@ -331,7 +333,9 @@ class _NotificationTile extends StatelessWidget {
         NotificationType.orderOnTheWay ||
         NotificationType.orderDelivered ||
         NotificationType.orderCancelled ||
-        NotificationType.orderOverdue =>
+        NotificationType.orderOverdue ||
+        NotificationType.customerUnreachable ||
+        NotificationType.driverIncident =>
           true,
         _ => false,
       };
@@ -361,6 +365,10 @@ class _NotificationTile extends StatelessWidget {
           (Icons.speed_rounded, AppColors.error),
         NotificationType.busyModeOff =>
           (Icons.speed_rounded, AppColors.accent),
+        NotificationType.customerUnreachable =>
+          (Icons.door_front_door_outlined, AppColors.error),
+        NotificationType.driverIncident =>
+          (Icons.warning_amber_rounded, AppColors.error),
       };
 
   String _timeAgo(DateTime dt) {

@@ -38,6 +38,12 @@ class VendorProvider extends ChangeNotifier {
   StreamSubscription<List<VendorOrder>>? _firestoreSub;
   StreamSubscription<List<Voucher>>? _voucherSub;
   StreamSubscription<List<Map<String, dynamic>>>? _nameChangeSub;
+  StreamSubscription<bool>? _capacitySub;
+
+  // Live delivery-capacity signal (driver count vs. in-flight orders).
+  // Defaults to true (optimistic) until the first snapshot arrives, so the
+  // dashboard never flashes a false "no capacity" warning on load.
+  bool hasDeliveryCapacity = true;
 
   bool isOpen = true;
   bool isBusy = false;
@@ -98,6 +104,7 @@ class VendorProvider extends ChangeNotifier {
     _firestoreSub?.cancel();
     _voucherSub?.cancel();
     _nameChangeSub?.cancel();
+    _capacitySub?.cancel();
     _orders = [];
     if (kUseFirebase) {
       isStatusLoaded = false;
@@ -106,8 +113,19 @@ class VendorProvider extends ChangeNotifier {
       _loadPersistedRestaurantInfo(id);
       _subscribeToVouchers(id);
       _subscribeToNameChangeRequests(id);
+      _subscribeToCapacity();
     }
     notifyListeners();
+  }
+
+  /// Live delivery-capacity stream — keeps [hasDeliveryCapacity] current as
+  /// drivers go online/offline or orders finish, instead of only checking at
+  /// the moment the vendor taps Accept/Mark-Ready.
+  void _subscribeToCapacity() {
+    _capacitySub = FirestoreOrderService.instance.streamDeliveryCapacity().listen((capacity) {
+      hasDeliveryCapacity = capacity;
+      notifyListeners();
+    }, onError: (Object e) => debugPrint('[Firestore] streamDeliveryCapacity failed: $e'));
   }
 
   /// Streams this restaurant's own voucher codes from Firestore — replaces
@@ -245,6 +263,8 @@ class VendorProvider extends ChangeNotifier {
       final previousStatusById = {for (final o in _orders) o.id: o.status};
       final previousArrivedById = {for (final o in _orders) o.id: o.driverAtRestaurant};
       final previousNoDriversById = {for (final o in _orders) o.id: o.noDriversAvailable};
+      final previousUnreachableById = {for (final o in _orders) o.id: o.customerUnreachable};
+      final previousIncidentById = {for (final o in _orders) o.id: o.driverIncident};
 
       // Merge incoming orders — add new ones, push a notification for truly new orders
       final newOrders =
@@ -340,12 +360,50 @@ class VendorProvider extends ChangeNotifier {
         }
       }
 
+      // S8/S9 — driver is stuck at the customer's door. The vendor has a
+      // direct line to the customer, so they're best placed to call/text
+      // about it — read-only here, the customer app owns clearing the flag.
+      for (final o in incoming) {
+        final wasUnreachable = previousUnreachableById[o.id] ?? false;
+        if (!wasUnreachable && o.customerUnreachable) {
+          _push(
+            type: NotificationType.customerUnreachable,
+            title: 'Driver can\'t reach the customer',
+            body: '${o.orderNumber} — please try calling ${o.customerName} at ${o.customerPhone}.',
+            orderId: o.id,
+          );
+        }
+      }
+
+      // S17/S18 — blocking incident after pickup. High-urgency: the order is
+      // already in transit and can't be resolved from this app alone.
+      for (final o in incoming) {
+        final wasIncident = previousIncidentById[o.id] ?? false;
+        if (!wasIncident && o.driverIncident) {
+          _push(
+            type: NotificationType.driverIncident,
+            title: '⚠️ Driver reported an incident',
+            body: '${o.orderNumber}: ${incidentReasonLabel(o.driverIncidentReason)}. '
+                'This order may not be delivered — contact the driver or admin.',
+            orderId: o.id,
+          );
+        }
+      }
+
       _orders = incoming;
       notifyListeners();
     }, onError: (Object e) {
       debugPrint('[VendorProvider] Firestore stream error: $e');
     });
   }
+
+  static String incidentReasonLabel(String? reason) => switch (reason) {
+        'accident_vehicle' => 'Vehicle or accident issue',
+        'food_damaged' => 'Food was damaged in transit',
+        'safety_concern' => 'Safety concern reported',
+        'customer_refused' => 'Customer refused delivery',
+        _ => 'Other issue reported',
+      };
 
   // ── Order actions ─────────────────────────────────────────────────────────
 
@@ -401,20 +459,17 @@ class VendorProvider extends ChangeNotifier {
 
       // Accept (now landing on awaitingDriver for delivery orders) and
       // Mark-Ready are the moments a delivery order actually needs a driver
-      // soon — warn (don't block) if capacity looks thin. Non-blocking and
-      // best-effort: a failed check just skips the warning.
-      if (order.isDelivery && (next == OrderStatus.awaitingDriver || next == OrderStatus.ready)) {
-        FirestoreOrderService.instance.hasDeliveryCapacity().then((hasCapacity) {
-          if (!hasCapacity) {
-            _push(
-              type: NotificationType.orderOverdue,
-              title: 'Low Driver Availability',
-              body: '${order.orderNumber} may sit a while — no drivers are free for delivery right now.',
-              orderId: order.id,
-            );
-            notifyListeners();
-          }
-        }).catchError((e) => debugPrint('[Firestore] hasDeliveryCapacity failed: $e'));
+      // soon — warn (don't block) if the live capacity signal looks thin.
+      if (order.isDelivery &&
+          (next == OrderStatus.awaitingDriver || next == OrderStatus.ready) &&
+          !hasDeliveryCapacity) {
+        _push(
+          type: NotificationType.orderOverdue,
+          title: 'Low Driver Availability',
+          body: '${order.orderNumber} may sit a while — no drivers are free for delivery right now.',
+          orderId: order.id,
+        );
+        notifyListeners();
       }
     }
   }
@@ -845,6 +900,9 @@ class VendorProvider extends ChangeNotifier {
   void dispose() {
     _overdueTimer?.cancel();
     _firestoreSub?.cancel();
+    _voucherSub?.cancel();
+    _nameChangeSub?.cancel();
+    _capacitySub?.cancel();
     super.dispose();
   }
 

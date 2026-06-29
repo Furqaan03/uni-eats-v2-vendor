@@ -42,6 +42,11 @@ class VendorOrder {
     this.driverAtRestaurant = false,
     this.driverCancelReason,
     this.noDriversAvailable = false,
+    this.customerUnreachable = false,
+    this.customerUnreachableAt,
+    this.driverIncident = false,
+    this.driverIncidentReason,
+    this.driverIncidentAt,
   });
 
   final String id;
@@ -77,6 +82,16 @@ class VendorOrder {
   // True if, after a driver gave up (or every online driver declined), no
   // other driver is currently online with a free slot to take over.
   final bool noDriversAvailable;
+  // Driver is at the customer's door getting no response. Read-only here —
+  // the customer app owns clearing it; the vendor can only see it and call.
+  final bool customerUnreachable;
+  final DateTime? customerUnreachableAt;
+  // Blocking problem the driver hit after pickup (accident, food damaged,
+  // safety concern, customer refused, other). Order status is NOT rolled
+  // back for this — it stays at its last status; only admin can resolve it.
+  final bool driverIncident;
+  final String? driverIncidentReason;
+  final DateTime? driverIncidentAt;
 
   String get typeLabel => switch (orderType) {
         OrderType.pickup => 'Pickup',
@@ -122,5 +137,12 @@ class VendorOrder {
         cancelReason: cancelReason ?? this.cancelReason,
         cancelledBy: cancelledBy ?? this.cancelledBy,
         driverAtRestaurant: driverAtRestaurant,
+        driverCancelReason: driverCancelReason,
+        noDriversAvailable: noDriversAvailable,
+        customerUnreachable: customerUnreachable,
+        customerUnreachableAt: customerUnreachableAt,
+        driverIncident: driverIncident,
+        driverIncidentReason: driverIncidentReason,
+        driverIncidentAt: driverIncidentAt,
       );
 }

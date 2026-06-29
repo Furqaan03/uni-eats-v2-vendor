@@ -1,4 +1,6 @@
-﻿import 'package:cloud_firestore/cloud_firestore.dart';
+﻿import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants/restaurants.dart';
 import '../data/models/order.dart';
@@ -30,24 +32,45 @@ class FirestoreOrderService {
   FirestoreOrderService._();
   static final FirestoreOrderService instance = FirestoreOrderService._();
 
-  /// One-time check of real delivery capacity — used at Accept/Mark-Ready
-  /// time to warn the vendor (not block them) when drivers are scarce.
-  /// Filters status client-side rather than adding a second `where` clause,
-  /// to avoid needing a composite index for a small, campus-scale dataset.
-  Future<bool> hasDeliveryCapacity() async {
-    final driversSnap = await FirebaseFirestore.instance
-        .collection('drivers')
-        .where('isOnline', isEqualTo: true)
-        .get();
-    final onlineDrivers = driversSnap.docs.length;
-    if (onlineDrivers == 0) return false;
+  /// Live delivery-capacity signal — combines a driver-count stream
+  /// with an in-flight-orders stream so the vendor dashboard can reflect
+  /// capacity changes (a driver going online/offline, an order finishing)
+  /// without waiting for the vendor's next Accept/Mark-Ready tap.
+  Stream<bool> streamDeliveryCapacity() {
+    late StreamController<bool> controller;
+    int onlineDrivers = 0;
+    int inFlight = 0;
+    StreamSubscription? driversSub;
+    StreamSubscription? ordersSub;
 
-    final ordersSnap =
-        await FirebaseFirestore.instance.collection('orders').where('orderType', isEqualTo: 'delivery').get();
-    final inFlight = ordersSnap.docs
-        .where((d) => _kInFlightDeliveryStatuses.contains(d.data()['status'] as String?))
-        .length;
-    return (onlineDrivers * _kMaxOrdersPerDriver) - inFlight > 0;
+    controller = StreamController<bool>.broadcast(
+      onListen: () {
+        driversSub = FirebaseFirestore.instance
+            .collection('drivers')
+            .where('isOnline', isEqualTo: true)
+            .snapshots()
+            .listen((snap) {
+          onlineDrivers = snap.docs.length;
+          controller.add((onlineDrivers * _kMaxOrdersPerDriver) - inFlight > 0);
+        }, onError: (Object e) => controller.addError(e));
+
+        ordersSub = FirebaseFirestore.instance
+            .collection('orders')
+            .where('orderType', isEqualTo: 'delivery')
+            .snapshots()
+            .listen((snap) {
+          inFlight = snap.docs
+              .where((d) => _kInFlightDeliveryStatuses.contains(d.data()['status'] as String?))
+              .length;
+          controller.add((onlineDrivers * _kMaxOrdersPerDriver) - inFlight > 0);
+        }, onError: (Object e) => controller.addError(e));
+      },
+      onCancel: () async {
+        await driversSub?.cancel();
+        await ordersSub?.cancel();
+      },
+    );
+    return controller.stream;
   }
 
   CollectionReference<Map<String, dynamic>> get _col =>
@@ -284,6 +307,11 @@ class FirestoreOrderService {
       driverAtRestaurant: d['driverAtRestaurant'] as bool? ?? false,
       driverCancelReason: d['driverCancelReason'] as String?,
       noDriversAvailable: d['noDriversAvailable'] as bool? ?? false,
+      customerUnreachable: d['customerUnreachable'] as bool? ?? false,
+      customerUnreachableAt: (d['customerUnreachableAt'] as Timestamp?)?.toDate(),
+      driverIncident: d['driverIncident'] as bool? ?? false,
+      driverIncidentReason: d['driverIncidentReason'] as String?,
+      driverIncidentAt: (d['driverIncidentAt'] as Timestamp?)?.toDate(),
     );
   }
 

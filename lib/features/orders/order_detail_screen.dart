@@ -62,6 +62,18 @@ class OrderDetailScreen extends StatelessWidget {
             _StatusHeader(order: order, isDark: isDark),
             const SizedBox(height: 12),
 
+            // ── Driver incident (S17/S18) — highest urgency, read-only ───
+            if (order.driverIncident) ...[
+              _DriverIncidentBanner(order: order),
+              const SizedBox(height: 10),
+            ],
+
+            // ── Customer unreachable (S8/S9) — read-only ─────────────────
+            if (order.customerUnreachable) ...[
+              _CustomerUnreachableBanner(order: order),
+              const SizedBox(height: 10),
+            ],
+
             // ── Customer ────────────────────────────────────────────────
             _SectionCard(
               isDark: isDark,
@@ -472,6 +484,130 @@ class _SectionTitle extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ── Driver incident banner (S17/S18) ──────────────────────────────────────────
+// Read-only: the vendor can't resolve this themselves, only admin can. The
+// order's status is deliberately not rolled back — food is already in
+// transit — so this is purely an awareness + escalation surface.
+
+class _DriverIncidentBanner extends StatelessWidget {
+  const _DriverIncidentBanner({required this.order});
+  final VendorOrder order;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.error.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.error.withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: AppColors.error, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '⚠️ Driver reported an incident',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.error,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '${VendorProvider.incidentReasonLabel(order.driverIncidentReason)}. '
+            'This order may not be delivered. Please contact the driver or admin.',
+            style: GoogleFonts.plusJakartaSans(fontSize: 12.5),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () => _showContactAdminSheet(context, order),
+              style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
+              icon: const Icon(Icons.support_agent_rounded, size: 16),
+              label: const Text('Contact Admin'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showContactAdminSheet(BuildContext context, VendorOrder order) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Escalate to Admin'),
+        content: Text(
+          'Report order ${order.orderNumber} (${VendorProvider.incidentReasonLabel(order.driverIncidentReason)}) '
+          'to the admin team for resolution — refund, driver suspension, or manual review.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Customer unreachable banner (S8/S9, vendor side) ──────────────────────────
+// Read-only on this side — the customer app owns clearing the flag. The
+// vendor's role is just to know about it and try calling the customer.
+
+class _CustomerUnreachableBanner extends StatelessWidget {
+  const _CustomerUnreachableBanner({required this.order});
+  final VendorOrder order;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.error.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.error.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.door_front_door_outlined, color: AppColors.error, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Driver can\'t reach the customer',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.error,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Please try calling the customer directly: ${order.customerPhone}',
+            style: GoogleFonts.plusJakartaSans(fontSize: 12.5),
+          ),
+        ],
+      ),
     );
   }
 }
