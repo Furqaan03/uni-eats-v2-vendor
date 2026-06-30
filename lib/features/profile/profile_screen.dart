@@ -10,6 +10,8 @@ import '../../core/providers/vendor_provider.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../widgets/app_logo.dart';
 import '../auth/login_screen.dart';
+import 'policies.dart';
+import 'policy_viewer_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -482,6 +484,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (picked != null && mounted) setState(() => _avatarPath = picked.path);
   }
 
+  /// Maps a policy document reference to a representative icon for its row.
+  IconData _policyIcon(String ref) {
+    switch (ref) {
+      case 'UE-POL-PRIV-001':
+        return Icons.lock_outline; // Data Protection & Privacy
+      case 'UE-POL-FOOD-001':
+        return Icons.restaurant_outlined; // Food Safety & Handling
+      case 'UE-POL-AUP-001':
+        return Icons.gavel_outlined; // Acceptable Use
+      case 'UE-POL-REF-001':
+        return Icons.receipt_long_outlined; // Refund & Cancellation
+      case 'UE-POL-PAY-001':
+        return Icons.payments_outlined; // Payment Security
+      case 'UE-POL-DR-001':
+        return Icons.history_toggle_off_outlined; // Data Retention & Deletion
+      default:
+        return Icons.description_outlined;
+    }
+  }
+
   // ── Build ─────────────────────────────────────────────────────────────────
 
   @override
@@ -648,6 +670,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   subtitle: 'v0.1.0',
                   onTap: _showAbout,
                 ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Legal & Policies — official Uni Eats policy documents, readable
+            // offline (see policies.dart / PolicyViewerScreen).
+            _Section(
+              title: 'Legal & Policies',
+              children: [
+                for (final policy in kVendorPolicies)
+                  _SettingTile(
+                    icon: _policyIcon(policy.ref),
+                    label: policy.title,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => PolicyViewerScreen(policy: policy),
+                      ),
+                    ),
+                  ),
               ],
             ),
             const SizedBox(height: 24),
