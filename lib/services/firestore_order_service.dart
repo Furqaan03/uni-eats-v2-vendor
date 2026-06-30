@@ -28,6 +28,12 @@ String get kVendorLocation =>
 const _kMaxOrdersPerDriver = 3;
 const _kInFlightDeliveryStatuses = {'ready', 'assigned', 'driverArrived', 'pickedUp', 'enRoute'};
 
+// A driver only counts as genuinely online if their heartbeat (`lastActiveAt`)
+// is fresher than this — mirrors the customer app's ghost-driver filter (90s,
+// ~2 missed 30s beats) so we never push a new-delivery alert to a driver whose
+// app died.
+const _kDriverStaleAfter = Duration(seconds: 90);
+
 class FirestoreOrderService {
   FirestoreOrderService._();
   static final FirestoreOrderService instance = FirestoreOrderService._();
@@ -151,6 +157,47 @@ class FirestoreOrderService {
       if (offersPickup != null) 'offersPickup': offersPickup,
       if (openingHours != null) 'openingHours': openingHours,
     }, SetOptions(merge: true));
+  }
+
+  /// Save/refresh this restaurant's FCM token so the customer app can notify it
+  /// of new orders. Stored on the restaurant doc (merge — never clobbers info).
+  Future<void> saveRestaurantFcmToken(String restaurantId, String token) async {
+    if (restaurantId.isEmpty || token.isEmpty) return;
+    await FirebaseFirestore.instance
+        .collection('restaurants')
+        .doc(restaurantId)
+        .set({'fcmToken': token}, SetOptions(merge: true));
+  }
+
+  /// The customer's FCM token for [orderId] — reads the order's userId then
+  /// that user's token, so the vendor can push reject/ready updates.
+  Future<String?> fetchCustomerFcmTokenForOrder(String orderId) async {
+    final orderSnap = await _col.doc(orderId).get();
+    final userId = orderSnap.data()?['userId'];
+    if (userId is! String || userId.isEmpty) return null;
+    final userSnap = await FirebaseFirestore.instance.collection('users').doc(userId).get();
+    final token = userSnap.data()?['fcmToken'];
+    return token is String && token.isNotEmpty ? token : null;
+  }
+
+  /// FCM tokens of all genuinely-online drivers (isOnline + fresh heartbeat),
+  /// so the vendor can alert them when a delivery order is accepted.
+  Future<List<String>> fetchAvailableDriverTokens() async {
+    final snap = await FirebaseFirestore.instance
+        .collection('drivers')
+        .where('isOnline', isEqualTo: true)
+        .get();
+    final now = DateTime.now();
+    final tokens = <String>[];
+    for (final d in snap.docs) {
+      final data = d.data();
+      final ts = data['lastActiveAt'];
+      if (ts is! Timestamp) continue; // no heartbeat → treat as offline/ghost
+      if (now.difference(ts.toDate()) >= _kDriverStaleAfter) continue;
+      final token = data['fcmToken'];
+      if (token is String && token.isNotEmpty) tokens.add(token);
+    }
+    return tokens;
   }
 
   CollectionReference<Map<String, dynamic>> get _nameChangeRequestsCol =>

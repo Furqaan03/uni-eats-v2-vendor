@@ -25,6 +25,13 @@ dependencies:
   google_sign_in: ^6.2.2
   firebase_auth: ^5.3.4
 
+  # Push notifications (client-side FCM HTTP v1 — see NOTIFICATIONS_PLAN.md).
+  # firebase_messaging ^15.x is the line compatible with firebase_core ^3.x.
+  firebase_messaging: ^15.1.6
+  flutter_local_notifications: ^18.0.1
+  googleapis_auth: ^1.6.0
+  http: ^1.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -32,3 +39,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  assets:
+    - assets/push/

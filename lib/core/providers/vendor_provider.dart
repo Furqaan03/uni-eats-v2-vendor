@@ -9,6 +9,8 @@ import '../../data/models/voucher.dart';
 import '../../data/repositories/orders_repository.dart';
 import '../../data/repositories/menu_repository.dart';
 import '../../services/firestore_order_service.dart';
+import '../../services/push/notification_service.dart';
+import '../../services/push/order_push.dart';
 import '../constants/restaurants.dart';
 
 class VendorProvider extends ChangeNotifier {
@@ -114,8 +116,31 @@ class VendorProvider extends ChangeNotifier {
       _subscribeToVouchers(id);
       _subscribeToNameChangeRequests(id);
       _subscribeToCapacity();
+      _registerPushToken(id);
     }
     notifyListeners();
+  }
+
+  // Save this restaurant's FCM token (and keep it fresh on rotation) so the
+  // customer app can push new-order alerts to it. Best-effort.
+  bool _pushRefreshHooked = false;
+  void _registerPushToken(String restaurantId) {
+    NotificationService.instance.currentToken().then((token) {
+      if (token != null && token.isNotEmpty) {
+        FirestoreOrderService.instance
+            .saveRestaurantFcmToken(restaurantId, token)
+            .catchError((e) => debugPrint('[push] saveRestaurantFcmToken failed: $e'));
+      }
+    });
+    if (_pushRefreshHooked) return;
+    _pushRefreshHooked = true;
+    NotificationService.instance.onTokenRefresh((token) {
+      if (_activeVendorId.isNotEmpty) {
+        FirestoreOrderService.instance
+            .saveRestaurantFcmToken(_activeVendorId, token)
+            .catchError((e) => debugPrint('[push] saveRestaurantFcmToken refresh failed: $e'));
+      }
+    });
   }
 
   /// Live delivery-capacity stream — keeps [hasDeliveryCapacity] current as
@@ -457,6 +482,37 @@ class VendorProvider extends ChangeNotifier {
           .updateOrderStatus(id, _toFirestoreStatus(next, order.orderType))
           .catchError((e) => debugPrint('[Firestore] advanceOrder failed: $e'));
 
+      // Vendor just accepted the order (newOrder → next): confirm to the
+      // customer. Delivery is now finding a driver; pickup is being prepared.
+      if (order.status == OrderStatus.newOrder) {
+        OrderPush.notifyCustomer(
+          orderId: order.id,
+          title: 'Order confirmed ✅',
+          body: order.isDelivery
+              ? '$kVendorName accepted your order — finding you a driver.'
+              : '$kVendorName accepted your order — preparing it now.',
+        ).catchError((e) => debugPrint('[push] notifyCustomer (accept) failed: $e'));
+      }
+
+      // Vendor just accepted a delivery order (→ awaitingDriver): loudly alert
+      // every available driver that it's up for grabs. Fire-and-forget.
+      if (order.isDelivery && next == OrderStatus.awaitingDriver) {
+        OrderPush.notifyDriversNewDelivery(
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          restaurantName: kVendorName,
+        ).catchError((e) => debugPrint('[push] notifyDrivers failed: $e'));
+      }
+
+      // Pickup order marked ready → tell the customer to come collect it.
+      if (!order.isDelivery && next == OrderStatus.ready) {
+        OrderPush.notifyCustomer(
+          orderId: order.id,
+          title: 'Your order is ready 🛍️',
+          body: '${order.orderNumber} is ready for pickup at $kVendorName.',
+        ).catchError((e) => debugPrint('[push] notifyCustomer (ready) failed: $e'));
+      }
+
       // Accept (now landing on awaitingDriver for delivery orders) and
       // Mark-Ready are the moments a delivery order actually needs a driver
       // soon — warn (don't block) if the live capacity signal looks thin.
@@ -495,6 +551,12 @@ class VendorProvider extends ChangeNotifier {
       FirestoreOrderService.instance
           .updateOrderStatus(id, 'cancelled', cancelReason: reason)
           .catchError((e) => debugPrint('[Firestore] cancelOrder failed: $e'));
+      // Tell the customer their order was rejected (and why).
+      OrderPush.notifyCustomer(
+        orderId: id,
+        title: 'Order could not be accepted',
+        body: '${order.orderNumber} was rejected: $reason. Any hold is refunded.',
+      ).catchError((e) => debugPrint('[push] notifyCustomer (reject) failed: $e'));
     }
   }
 
