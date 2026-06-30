@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/menu_item.dart';
 import '../../data/models/voucher.dart';
+import '../../widgets/segmented_tabs.dart';
 
 /// The promotions tab content (Vouchers + Item Discounts), embedded as a tab
 /// inside the Menu screen rather than as its own top-level nav destination.
@@ -16,23 +17,19 @@ class PromotionsTabView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
     return DefaultTabController(
       length: 2,
       child: Column(
         children: [
-          TabBar(
-            labelColor: AppColors.primary,
-            unselectedLabelColor: theme.colorScheme.outline,
-            indicatorColor: AppColors.primary,
-            indicatorSize: TabBarIndicatorSize.label,
-            labelStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-            unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
-            tabs: const [
-              Tab(text: 'Vouchers'),
-              Tab(text: 'Item Discounts'),
-            ],
+          Builder(
+            builder: (context) => SegmentedTabs(
+              controller: DefaultTabController.of(context),
+              margin: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+              tabs: const [
+                SegTab('Vouchers', icon: Icons.confirmation_number_outlined),
+                SegTab('Item Discounts', icon: Icons.sell_outlined),
+              ],
+            ),
           ),
           const Expanded(
             child: TabBarView(

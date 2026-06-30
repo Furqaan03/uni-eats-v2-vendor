@@ -7,6 +7,7 @@ import '../../core/providers/vendor_provider.dart';
 import '../../core/utils/formatters.dart';
 import '../../data/models/menu_item.dart';
 import '../../widgets/staggered_fade_in.dart';
+import '../../widgets/segmented_tabs.dart';
 import 'add_item_screen.dart';
 import '../../core/utils/page_transitions.dart';
 import '../promotions/promotions_screen.dart';
@@ -104,12 +105,15 @@ class _MenuScreenState extends State<MenuScreen> with SingleTickerProviderStateM
               onPressed: () => Navigator.of(context).push(fadeSlidePage(const AddItemScreen())),
             ),
         ],
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Items'),
-            Tab(text: 'Promotions'),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(56),
+          child: SegmentedTabs(
+            controller: _tabController,
+            tabs: const [
+              SegTab('Items', icon: Icons.restaurant_menu_rounded),
+              SegTab('Promotions', icon: Icons.local_offer_rounded),
+            ],
+          ),
         ),
       ),
       body: TabBarView(
