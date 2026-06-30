@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../../data/models/order.dart';
 import '../../data/models/menu_item.dart';
 import '../../data/models/vendor_notification.dart';
@@ -219,7 +220,10 @@ class VendorProvider extends ChangeNotifier {
         return;
       }
       if (restaurantId != _activeVendorId) return; // vendor switched again mid-fetch
-      _menuItems = docs.map((d) => MenuItem.fromMap(d)).toList();
+      _menuItems = docs.map((d) => MenuItem.fromMap(d)).toList()
+        // Honour the vendor's saved display order; stable sort keeps fetch
+        // order for any legacy items that predate sortIndex (all 0).
+        ..sort((a, b) => a.sortIndex.compareTo(b.sortIndex));
       notifyListeners();
     } catch (e) {
       debugPrint('[Firestore] loadPersistedMenu failed: $e');
@@ -710,6 +714,9 @@ class VendorProvider extends ChangeNotifier {
   }
 
   void addMenuItem(MenuItem item) {
+    // New items go to the end of the saved order, not the front.
+    final maxIndex = _menuItems.fold<int>(-1, (m, i) => i.sortIndex > m ? i.sortIndex : m);
+    item.sortIndex = maxIndex + 1;
     _menuItems = [..._menuItems, item];
     notifyListeners();
     _persistMenuItem(item);
@@ -796,6 +803,90 @@ class VendorProvider extends ChangeNotifier {
     ];
     notifyListeners();
     _persistMenuItem(_menuItems.firstWhere((i) => i.id == itemId));
+  }
+
+  /// Clones an item (new id, "(Copy)" name) and inserts it right after the
+  /// original. Lets vendors build size/variant items without re-typing.
+  MenuItem duplicateMenuItem(String id) {
+    final original = _menuItems.firstWhere((i) => i.id == id);
+    final copy = MenuItem(
+      id: const Uuid().v4(),
+      name: '${original.name} (Copy)',
+      description: original.description,
+      price: original.price,
+      category: original.category,
+      isAvailable: original.isAvailable,
+      prepMinutes: original.prepMinutes,
+      calories: original.calories,
+      imagePath: original.imagePath,
+      discountPercent: original.discountPercent,
+      tags: List.of(original.tags),
+      sortIndex: original.sortIndex,
+    );
+    final idx = _menuItems.indexWhere((i) => i.id == id);
+    _menuItems = [
+      ..._menuItems.sublist(0, idx + 1),
+      copy,
+      ..._menuItems.sublist(idx + 1),
+    ];
+    _normaliseSortIndexes();
+    notifyListeners();
+    _persistAllMenuItems();
+    return copy;
+  }
+
+  /// Moves an item within its category from [oldIndex] to [newIndex] (indices
+  /// are relative to that category's items in current display order) and
+  /// persists the new order.
+  void reorderCategoryItem(String category, int oldIndex, int newIndex) {
+    final catItems = _menuItems.where((i) => i.category == category).toList();
+    if (oldIndex < 0 || oldIndex >= catItems.length) return;
+    final moved = catItems.removeAt(oldIndex);
+    // ReorderableListView reports the post-removal target index.
+    if (newIndex > oldIndex) newIndex -= 1;
+    catItems.insert(newIndex.clamp(0, catItems.length), moved);
+
+    // Splice the reordered category items back into their global slots.
+    var c = 0;
+    _menuItems = [
+      for (final item in _menuItems)
+        if (item.category == category) catItems[c++] else item,
+    ];
+    _normaliseSortIndexes();
+    notifyListeners();
+    _persistAllMenuItems();
+  }
+
+  /// Hides or shows every item in a category at once.
+  void setCategoryAvailability(String category, bool available) {
+    _menuItems = [
+      for (final item in _menuItems)
+        if (item.category == category && item.isAvailable != available)
+          item.copyWith(isAvailable: available)
+        else
+          item,
+    ];
+    notifyListeners();
+    for (final item in _menuItems.where((i) => i.category == category)) {
+      _persistMenuItem(item);
+      if (kUseFirebase) {
+        FirestoreOrderService.instance
+            .updateItemAvailability(_activeVendorId, item.id, item.isAvailable)
+            .catchError((e) => debugPrint('[Firestore] setCategoryAvailability failed: $e'));
+      }
+    }
+  }
+
+  void _normaliseSortIndexes() {
+    for (var i = 0; i < _menuItems.length; i++) {
+      _menuItems[i].sortIndex = i;
+    }
+  }
+
+  void _persistAllMenuItems() {
+    for (final item in _menuItems) {
+      _persistMenuItem(item);
+    }
   }
 
   // ── Notification actions ──────────────────────────────────────────────────

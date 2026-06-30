@@ -199,6 +199,7 @@ class _MenuItemDetailScreenState extends State<MenuItemDetailScreen> {
         discountPercent:
             (rawDiscount != null && rawDiscount > 0) ? rawDiscount : null,
         tags: _tags,
+        sortIndex: orig.sortIndex, // preserve the vendor's saved display order
       );
       vendor.updateMenuItem(updated);
       // Stay on detail screen in view mode — don't pop

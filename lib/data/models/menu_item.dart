@@ -10,6 +10,7 @@ class MenuItem {
     this.calories,
     this.imagePath,
     this.discountPercent,
+    this.sortIndex = 0,
     List<String>? tags,
   }) : tags = tags ?? [];
 
@@ -25,6 +26,8 @@ class MenuItem {
   // 0–100 percent discount on this item, set by vendor
   double? discountPercent;
   final List<String> tags;
+  // Vendor-controlled display order within a category. Lower shows first.
+  int sortIndex;
 
   bool get isFeatured => tags.contains('Featured');
   bool get hasDiscount =>
@@ -44,6 +47,7 @@ class MenuItem {
         'imagePath': imagePath,
         'discountPercent': discountPercent,
         'tags': tags,
+        'sortIndex': sortIndex,
       };
 
   factory MenuItem.fromMap(Map<String, dynamic> map) => MenuItem(
@@ -58,6 +62,7 @@ class MenuItem {
         imagePath: map['imagePath'] as String?,
         discountPercent: (map['discountPercent'] as num?)?.toDouble(),
         tags: (map['tags'] as List<dynamic>?)?.cast<String>(),
+        sortIndex: (map['sortIndex'] as num?)?.toInt() ?? 0,
       );
 
   MenuItem copyWith({
@@ -69,6 +74,7 @@ class MenuItem {
     List<String>? tags,
     double? discountPercent,
     bool clearDiscount = false,
+    int? sortIndex,
   }) =>
       MenuItem(
         id: id,
@@ -83,5 +89,6 @@ class MenuItem {
         discountPercent:
             clearDiscount ? null : (discountPercent ?? this.discountPercent),
         tags: tags ?? List.of(this.tags),
+        sortIndex: sortIndex ?? this.sortIndex,
       );
 }
