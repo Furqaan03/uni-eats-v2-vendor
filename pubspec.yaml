@@ -18,6 +18,7 @@ dependencies:
 
   shared_preferences: ^2.3.3
   uuid: ^4.5.1
+  url_launcher: ^6.3.0
 
   # Firebase
   firebase_core: ^3.8.1

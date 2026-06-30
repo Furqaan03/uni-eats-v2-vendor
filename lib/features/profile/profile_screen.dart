@@ -10,6 +10,8 @@ import '../../core/providers/vendor_provider.dart';
 import '../../core/theme/theme_provider.dart';
 import '../../widgets/app_logo.dart';
 import '../auth/login_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'help_support_screen.dart';
 import 'policies.dart';
 import 'policy_viewer_screen.dart';
 
@@ -270,145 +272,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _showHelpCenter() {
-    final faqs = [
-      ('How do I accept an order?', 'Tap the order card and press "Accept Order". The customer is notified immediately.'),
-      ('How do I mark an order ready?', 'From the order detail screen, press "Mark as Ready" once preparation is complete.'),
-      ('Can I pause new orders?', 'Yes — toggle "Busy Mode" or close your restaurant from the dashboard status banner.'),
-      ('How do I edit a menu item?', 'Go to Menu, tap any item, then tap "Edit Item" at the bottom of the detail screen.'),
-      ('How is revenue calculated?', 'Only delivered orders count toward today\'s revenue. Cancelled orders are excluded.'),
-    ];
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.6,
-        maxChildSize: 0.9,
-        builder: (_, sc) => Column(
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 36, height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Row(
-                children: [
-                  const Icon(Icons.help_outline_rounded, color: AppColors.primary),
-                  const SizedBox(width: 10),
-                  Text('Help Center', style: GoogleFonts.fredoka(fontSize: 20)),
-                ],
-              ),
-            ),
-            Expanded(
-              child: ListView.separated(
-                controller: sc,
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                itemCount: faqs.length,
-                separatorBuilder: (_, __) => const Divider(height: 1),
-                itemBuilder: (_, i) => ExpansionTile(
-                  tilePadding: const EdgeInsets.symmetric(horizontal: 4),
-                  title: Text(faqs[i].$1,
-                      style: GoogleFonts.plusJakartaSans(
-                          fontSize: 14, fontWeight: FontWeight.w600)),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
-                      child: Text(faqs[i].$2,
-                          style: GoogleFonts.plusJakartaSans(
-                              fontSize: 13, height: 1.5, color: Colors.grey)),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _sendFeedback() {
-    final ctrl = TextEditingController();
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (_) => Padding(
-        padding: EdgeInsets.only(
-          left: 20, right: 20, top: 20,
-          bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Center(
-              child: Container(
-                width: 36, height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withValues(alpha: 0.3),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Text('Send Feedback', style: GoogleFonts.fredoka(fontSize: 20)),
-            const SizedBox(height: 4),
-            Text('Your feedback helps us improve the app.',
-                style: GoogleFonts.plusJakartaSans(fontSize: 12, color: Colors.grey)),
-            const SizedBox(height: 14),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              minLines: 4,
-              maxLines: 8,
-              decoration: InputDecoration(
-                hintText: 'What\'s on your mind?',
-                hintStyle: GoogleFonts.plusJakartaSans(fontSize: 14),
-              ),
-              style: GoogleFonts.plusJakartaSans(fontSize: 15),
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size.fromHeight(50),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-                onPressed: () {
-                  Navigator.pop(context);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Thanks for your feedback!',
-                          style: GoogleFonts.plusJakartaSans()),
-                      backgroundColor: AppColors.accent,
-                      behavior: SnackBarBehavior.floating,
-                    ),
-                  );
-                },
-                child: Text('Submit',
-                    style: GoogleFonts.plusJakartaSans(
-                        fontWeight: FontWeight.w700, fontSize: 15)),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
   void _showAbout() {
     showDialog(
       context: context,
@@ -656,13 +519,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
               children: [
                 _SettingTile(
                   icon: Icons.help_outline_rounded,
-                  label: 'Help Center',
-                  onTap: _showHelpCenter,
-                ),
-                _SettingTile(
-                  icon: Icons.feedback_outlined,
-                  label: 'Send Feedback',
-                  onTap: _sendFeedback,
+                  label: 'Help & Support',
+                  subtitle: 'Contact us, report a problem, FAQs',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => HelpSupportScreen(
+                        restaurantName: vendor.restaurantName,
+                        vendorId: fb.FirebaseAuth.instance.currentUser?.uid ?? '',
+                        appVersion: '0.1.0',
+                      ),
+                    ),
+                  ),
                 ),
                 _SettingTile(
                   icon: Icons.info_outline_rounded,
