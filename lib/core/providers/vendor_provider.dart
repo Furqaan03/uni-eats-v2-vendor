@@ -125,24 +125,25 @@ class VendorProvider extends ChangeNotifier {
   // Save this restaurant's FCM token (and keep it fresh on rotation) so the
   // customer app can push new-order alerts to it. Best-effort.
   bool _pushRefreshHooked = false;
+  // Last token this device wrote, so a rotation can prune the dead one.
+  String? _lastPushToken;
   void _registerPushToken(String restaurantId) {
     NotificationService.instance.currentToken().then((token) {
-      debugPrint('[push] vendor currentToken restaurantId=$restaurantId => ${token == null ? 'NULL' : '${token.substring(0, 12)}… (len ${token.length})'}');
-      if (token != null && token.isNotEmpty) {
-        FirestoreOrderService.instance
-            .saveRestaurantFcmToken(restaurantId, token)
-            .then((_) => debugPrint('[push] saveRestaurantFcmToken OK restaurantId=$restaurantId'))
-            .catchError((e) => debugPrint('[push] saveRestaurantFcmToken failed: $e'));
-      }
+      if (token == null || token.isEmpty) return;
+      _lastPushToken = token;
+      FirestoreOrderService.instance
+          .saveRestaurantFcmToken(restaurantId, token)
+          .catchError((e) => debugPrint('[push] saveRestaurantFcmToken failed: $e'));
     });
     if (_pushRefreshHooked) return;
     _pushRefreshHooked = true;
     NotificationService.instance.onTokenRefresh((token) {
-      if (_activeVendorId.isNotEmpty) {
-        FirestoreOrderService.instance
-            .saveRestaurantFcmToken(_activeVendorId, token)
-            .catchError((e) => debugPrint('[push] saveRestaurantFcmToken refresh failed: $e'));
-      }
+      if (_activeVendorId.isEmpty || token.isEmpty) return;
+      final old = _lastPushToken;
+      _lastPushToken = token;
+      FirestoreOrderService.instance
+          .replaceRestaurantFcmToken(_activeVendorId, oldToken: old, newToken: token)
+          .catchError((e) => debugPrint('[push] replaceRestaurantFcmToken failed: $e'));
     });
   }
 

@@ -1,5 +1,3 @@
-import 'dart:developer' as developer;
-
 import '../firestore_order_service.dart';
 import 'send_notification.dart';
 
@@ -15,7 +13,6 @@ class OrderPush {
     required String restaurantName,
   }) async {
     final tokens = await FirestoreOrderService.instance.fetchAvailableDriverTokens();
-    developer.log('[push] notifyDriversNewDelivery order=$orderNumber availableDriverTokens=${tokens.length}');
     if (tokens.isEmpty) return;
     await SendNotification.toTokens(
       tokens: tokens,

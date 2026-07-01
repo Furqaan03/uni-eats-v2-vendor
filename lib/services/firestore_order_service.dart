@@ -174,6 +174,19 @@ class FirestoreOrderService {
     }, SetOptions(merge: true));
   }
 
+  /// Swap a rotated-away token for the new one so the restaurant's `fcmTokens`
+  /// array doesn't grow unbounded as FCM rotates this device's token.
+  /// (arrayUnion + arrayRemove can't touch the same field in one write.)
+  Future<void> replaceRestaurantFcmToken(String restaurantId,
+      {String? oldToken, required String newToken}) async {
+    if (restaurantId.isEmpty || newToken.isEmpty) return;
+    final doc = FirebaseFirestore.instance.collection('restaurants').doc(restaurantId);
+    if (oldToken != null && oldToken.isNotEmpty && oldToken != newToken) {
+      await doc.set({'fcmTokens': FieldValue.arrayRemove([oldToken])}, SetOptions(merge: true));
+    }
+    await doc.set({'fcmTokens': FieldValue.arrayUnion([newToken])}, SetOptions(merge: true));
+  }
+
   /// The customer's FCM tokens for [orderId] — read from the token set the
   /// customer app snapshots onto the ORDER doc at creation. Reading users/{uid}
   /// directly is denied for the vendor (that collection is self/admin-read
