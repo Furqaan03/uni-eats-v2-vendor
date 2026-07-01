@@ -9,6 +9,20 @@ import '../data/models/voucher.dart';
 // Set to true after Firebase setup. See PLAN.md.
 const kUseFirebase = true;
 
+/// Data environment (mirrors the admin dashboard's Live/Test switch).
+///   test → unprefixed collections (all current data). Default.
+///   live → `live_`-prefixed collections (real launch data), kept fully separate.
+/// Flip [current] to [DataEnv.live] at real launch. Only TOP-LEVEL collection
+/// names are prefixed — subcollections inherit their parent's namespace.
+enum DataEnv { test, live }
+
+class AppEnv {
+  AppEnv._();
+  static const DataEnv current = DataEnv.test;
+  static String get _prefix => current == DataEnv.live ? 'live_' : '';
+  static String col(String name) => '$_prefix$name';
+}
+
 /// Vendor ID for this restaurant instance.
 /// Change this to match whichever restaurant this device represents.
 /// Must match the restaurant ID in the User app's mock_data_service.dart.
@@ -52,7 +66,7 @@ class FirestoreOrderService {
     controller = StreamController<bool>.broadcast(
       onListen: () {
         driversSub = FirebaseFirestore.instance
-            .collection('drivers')
+            .collection(AppEnv.col('drivers'))
             .where('isOnline', isEqualTo: true)
             .snapshots()
             .listen((snap) {
@@ -61,7 +75,7 @@ class FirestoreOrderService {
         }, onError: (Object e) => controller.addError(e));
 
         ordersSub = FirebaseFirestore.instance
-            .collection('orders')
+            .collection(AppEnv.col('orders'))
             .where('orderType', isEqualTo: 'delivery')
             .snapshots()
             .listen((snap) {
@@ -80,7 +94,7 @@ class FirestoreOrderService {
   }
 
   CollectionReference<Map<String, dynamic>> get _col =>
-      FirebaseFirestore.instance.collection('orders');
+      FirebaseFirestore.instance.collection(AppEnv.col('orders'));
 
   /// Real-time stream of orders for this vendor, sorted newest first.
   /// Sorts client-side to avoid requiring a Firestore composite index.
@@ -117,14 +131,14 @@ class FirestoreOrderService {
   Future<void> updateItemAvailability(
       String restaurantId, String itemId, bool isAvailable) async {
     await FirebaseFirestore.instance
-        .collection('menuAvailability')
+        .collection(AppEnv.col('menuAvailability'))
         .doc(restaurantId)
         .set({itemId: isAvailable}, SetOptions(merge: true));
   }
 
   /// Fetch a persisted name/location override for [restaurantId], if any.
   Future<Map<String, dynamic>?> fetchRestaurantInfo(String restaurantId) async {
-    final snap = await FirebaseFirestore.instance.collection('restaurants').doc(restaurantId).get();
+    final snap = await FirebaseFirestore.instance.collection(AppEnv.col('restaurants')).doc(restaurantId).get();
     return snap.data();
   }
 
@@ -144,7 +158,7 @@ class FirestoreOrderService {
     bool? offersPickup,
     Map<String, dynamic>? openingHours,
   }) async {
-    await FirebaseFirestore.instance.collection('restaurants').doc(restaurantId).set({
+    await FirebaseFirestore.instance.collection(AppEnv.col('restaurants')).doc(restaurantId).set({
       if (name != null) 'name': name,
       if (location != null) 'location': location,
       if (isOpen != null) 'isOpen': isOpen,
@@ -167,7 +181,7 @@ class FirestoreOrderService {
   Future<void> saveRestaurantFcmToken(String restaurantId, String token) async {
     if (restaurantId.isEmpty || token.isEmpty) return;
     await FirebaseFirestore.instance
-        .collection('restaurants')
+        .collection(AppEnv.col('restaurants'))
         .doc(restaurantId)
         .set({
       'fcmTokens': FieldValue.arrayUnion([token]),
@@ -180,7 +194,7 @@ class FirestoreOrderService {
   Future<void> replaceRestaurantFcmToken(String restaurantId,
       {String? oldToken, required String newToken}) async {
     if (restaurantId.isEmpty || newToken.isEmpty) return;
-    final doc = FirebaseFirestore.instance.collection('restaurants').doc(restaurantId);
+    final doc = FirebaseFirestore.instance.collection(AppEnv.col('restaurants')).doc(restaurantId);
     if (oldToken != null && oldToken.isNotEmpty && oldToken != newToken) {
       await doc.set({'fcmTokens': FieldValue.arrayRemove([oldToken])}, SetOptions(merge: true));
     }
@@ -208,7 +222,7 @@ class FirestoreOrderService {
   /// driver contributes ALL their device tokens.
   Future<List<String>> fetchAvailableDriverTokens() async {
     final snap = await FirebaseFirestore.instance
-        .collection('drivers')
+        .collection(AppEnv.col('drivers'))
         .where('isOnline', isEqualTo: true)
         .get();
     final now = DateTime.now();
@@ -240,7 +254,7 @@ class FirestoreOrderService {
   }
 
   CollectionReference<Map<String, dynamic>> get _nameChangeRequestsCol =>
-      FirebaseFirestore.instance.collection('nameChangeRequests');
+      FirebaseFirestore.instance.collection(AppEnv.col('nameChangeRequests'));
 
   /// Submits a name change for admin approval — restaurants/{id}.name is no
   /// longer vendor-writable directly (see firestore.rules), so this opens a
@@ -275,7 +289,7 @@ class FirestoreOrderService {
   }
 
   CollectionReference<Map<String, dynamic>> get _vouchersCol =>
-      FirebaseFirestore.instance.collection('vouchers');
+      FirebaseFirestore.instance.collection(AppEnv.col('vouchers'));
 
   /// Live stream of this restaurant's own voucher codes — the customer
   /// checkout reads the same root `vouchers/{code}` collection, scoped by
@@ -299,7 +313,7 @@ class FirestoreOrderService {
   }
 
   CollectionReference<Map<String, dynamic>> _menuItemsCol(String restaurantId) =>
-      FirebaseFirestore.instance.collection('menus').doc(restaurantId).collection('items');
+      FirebaseFirestore.instance.collection(AppEnv.col('menus')).doc(restaurantId).collection('items');
 
   /// One-time fetch of persisted menu items for [restaurantId].
   /// Returns an empty list if nothing has ever been written for this restaurant.

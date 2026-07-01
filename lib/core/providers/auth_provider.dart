@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
+import '../../services/firestore_order_service.dart' show AppEnv;
+
 /// Thrown when a vendor signup tries to claim a restaurant another vendor
 /// account already owns.
 class RestaurantAlreadyClaimedException implements Exception {
@@ -46,7 +48,7 @@ class VendorAuthProvider extends ChangeNotifier {
   bool get isLoggedIn => _session != null;
 
   CollectionReference<Map<String, dynamic>> get _vendorsCol =>
-      FirebaseFirestore.instance.collection('vendors');
+      FirebaseFirestore.instance.collection(AppEnv.col('vendors'));
 
   Future<VendorSession?> _loadSession(String uid, String fallbackEmail) async {
     final doc = await _vendorsCol.doc(uid).get();
