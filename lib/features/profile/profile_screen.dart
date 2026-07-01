@@ -322,6 +322,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             onPressed: () {
               final nav = Navigator.of(context);
               final auth = context.read<VendorAuthProvider>();
+              // Wipe the in-app notification center so the next vendor to sign
+              // in on this device doesn't inherit these notifications.
+              context.read<VendorProvider>().clearPersistedNotifications();
               Navigator.pop(ctx);
               auth.signOut();
               nav.pushAndRemoveUntil(

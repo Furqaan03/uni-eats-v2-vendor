@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 import '../../data/models/order.dart';
 import '../../data/models/menu_item.dart';
@@ -16,7 +18,7 @@ import '../constants/restaurants.dart';
 
 class VendorProvider extends ChangeNotifier {
   VendorProvider() {
-    _seedInitialNotifications();
+    _loadNotifications();
     _startOverdueWatcher();
     if (kUseFirebase) {
       // Real multi-vendor mode: there is no "this device's restaurant" yet —
@@ -902,6 +904,7 @@ class VendorProvider extends ChangeNotifier {
       n.isRead = true;
     }
     notifyListeners();
+    _persistNotifications();
   }
 
   void markRead(String id) {
@@ -909,12 +912,14 @@ class VendorProvider extends ChangeNotifier {
     if (idx != -1) {
       _notifications[idx].isRead = true;
       notifyListeners();
+      _persistNotifications();
     }
   }
 
   void clearAll() {
     _notifications.clear();
     notifyListeners();
+    _persistNotifications();
   }
 
   // ── Internals ─────────────────────────────────────────────────────────────
@@ -940,6 +945,7 @@ class VendorProvider extends ChangeNotifier {
     if (_notifications.length > 50) {
       _notifications.removeRange(50, _notifications.length);
     }
+    _persistNotifications();
   }
 
   void _pushOrderStatusNotification(VendorOrder order, OrderStatus next) {
@@ -980,54 +986,47 @@ class VendorProvider extends ChangeNotifier {
   }
 
   // Seed realistic-looking startup notifications matching mock orders
-  void _seedInitialNotifications() {
-    final now = DateTime.now();
-    final seeds = [
-      VendorNotification(
-        id: 'seed_1',
-        type: NotificationType.newOrder,
-        title: 'New Order Received',
-        body: '#P4821 from Sara M. · QAR 63.00',
-        createdAt: now.subtract(const Duration(minutes: 1)),
-        orderId: 'o1',
-      ),
-      VendorNotification(
-        id: 'seed_2',
-        type: NotificationType.newOrder,
-        title: 'New Order Received',
-        body: '#D4820 from Ahmed K. · QAR 40.00 · Delivery',
-        createdAt: now.subtract(const Duration(minutes: 4)),
-        orderId: 'o2',
-      ),
-      VendorNotification(
-        id: 'seed_3',
-        type: NotificationType.orderAccepted,
-        title: 'Order Accepted',
-        body: '#P4819 from Khalid H. is now being prepared.',
-        createdAt: now.subtract(const Duration(minutes: 14)),
-        orderId: 'o3',
-        isRead: true,
-      ),
-      VendorNotification(
-        id: 'seed_4',
-        type: NotificationType.orderAccepted,
-        title: 'Order Accepted',
-        body: '#T4818 (Table 7) from Fatima Z. is now being prepared.',
-        createdAt: now.subtract(const Duration(minutes: 18)),
-        orderId: 'o4',
-        isRead: true,
-      ),
-      VendorNotification(
-        id: 'seed_5',
-        type: NotificationType.orderReady,
-        title: 'Order Ready',
-        body: '#D4817 from Omar B. is ready for delivery.',
-        createdAt: now.subtract(const Duration(minutes: 25)),
-        orderId: 'o5',
-        isRead: true,
-      ),
-    ];
-    _notifications.addAll(seeds);
+  // Notifications used to be seeded with hardcoded mock orders on every
+  // construction — so they reappeared after being cleared and force-close, and
+  // real notifications (in-memory only) were lost on restart. They're now
+  // hydrated from and persisted to disk instead; the bell reflects real events.
+  static const _notifPrefsKey = 'vendor_notifications_v1';
+
+  Future<void> _loadNotifications() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_notifPrefsKey);
+      if (raw == null || raw.isEmpty) return;
+      final loaded = (jsonDecode(raw) as List)
+          .map((e) => VendorNotification.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+      // Preserve anything pushed before the async load returned (newest first).
+      _notifications
+        ..addAll(loaded)
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      notifyListeners();
+    } catch (_) {/* start empty on any decode error */}
+  }
+
+  Future<void> _persistNotifications() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(
+        _notifPrefsKey,
+        jsonEncode(_notifications.map((n) => n.toJson()).toList()),
+      );
+    } catch (_) {/* best-effort */}
+  }
+
+  /// Wipes persisted notifications — call on sign-out so a shared device
+  /// doesn't show the previous vendor's notifications to the next.
+  Future<void> clearPersistedNotifications() async {
+    _notifications.clear();
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_notifPrefsKey);
+    } catch (_) {/* best-effort */}
   }
 
   // Watch for new orders that haven't been accepted in 3+ minutes
