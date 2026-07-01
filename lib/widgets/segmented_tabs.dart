@@ -5,7 +5,14 @@ import '../core/theme/app_colors.dart';
 class SegTab {
   final String label;
   final IconData? icon;
-  const SegTab(this.label, {this.icon});
+
+  /// Optional count badge shown after the label (hidden when null or 0).
+  final int? count;
+
+  /// Badge fill when the segment is *not* selected. Defaults to primary.
+  final Color? badgeColor;
+
+  const SegTab(this.label, {this.icon, this.count, this.badgeColor});
 }
 
 /// A modern pill/segmented tab control backed by a [TabController] — a drop-in,
@@ -123,8 +130,39 @@ class _Segment extends StatelessWidget {
                 ),
               ),
             ),
+            if (tab.count != null && tab.count! > 0) ...[
+              const SizedBox(width: 6),
+              _Badge(
+                count: tab.count!,
+                // On the filled pill the badge flips to white with dark text
+                // so it stays legible; off-pill it uses its status colour.
+                bg: Color.lerp(tab.badgeColor ?? AppColors.primary, Colors.white, t)!,
+                fg: Color.lerp(Colors.white, AppColors.primaryDark, t)!,
+              ),
+            ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  const _Badge({required this.count, required this.bg, required this.fg});
+  final int count;
+  final Color bg;
+  final Color fg;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+      child: Text(
+        '$count',
+        textAlign: TextAlign.center,
+        style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w800),
       ),
     );
   }

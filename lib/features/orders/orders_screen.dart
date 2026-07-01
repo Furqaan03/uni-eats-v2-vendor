@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/providers/vendor_provider.dart';
 import '../../data/models/order.dart';
 import '../../widgets/staggered_fade_in.dart';
+import '../../widgets/segmented_tabs.dart';
 import '../../core/utils/page_transitions.dart';
 import 'order_detail_screen.dart';
 import 'widgets/order_card.dart';
@@ -46,38 +48,19 @@ class _OrdersScreenState extends State<OrdersScreen>
         return Scaffold(
           appBar: AppBar(
             title: const Text('Orders'),
-            bottom: TabBar(
-              controller: _tab,
-              labelColor: AppColors.primary,
-              unselectedLabelColor: theme.brightness == Brightness.dark
-                  ? Colors.white70
-                  : AppColors.lightTextSecondary,
-              indicatorColor: AppColors.primary,
-              labelStyle: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w600, fontSize: 13),
-              unselectedLabelStyle: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500, fontSize: 13),
-              tabs: [
-                Tab(
-                  child: _TabLabel(
-                    label: 'Preparing',
-                    count: preparing.length,
-                    color: AppColors.statusPreparing,
-                  ),
-                ),
-                Tab(
-                  child: _TabLabel(
-                    label: 'Ready',
-                    count: ready.length,
-                    color: AppColors.statusReady,
-                  ),
-                ),
-                Tab(
-                  child: _TabLabel(
-                    label: 'History',
-                    count: history.length,
-                    color: theme.colorScheme.outline,
-                  ),
-                ),
-              ],
+            bottom: PreferredSize(
+              preferredSize: const Size.fromHeight(56),
+              child: SegmentedTabs(
+                controller: _tab,
+                tabs: [
+                  SegTab('Preparing',
+                      count: preparing.length, badgeColor: AppColors.statusPreparing),
+                  SegTab('Ready',
+                      count: ready.length, badgeColor: AppColors.statusReady),
+                  SegTab('History',
+                      count: history.length, badgeColor: theme.colorScheme.outline),
+                ],
+              ),
             ),
           ),
           body: TabBarView(
@@ -94,39 +77,176 @@ class _OrdersScreenState extends State<OrdersScreen>
   }
 }
 
-// ── Tab label with optional badge ────────────────────────────────────────────
+// ── Date filter: preset sheet ────────────────────────────────────────────────
 
-class _TabLabel extends StatelessWidget {
-  const _TabLabel({required this.label, required this.count, required this.color});
-  final String label;
-  final int count;
-  final Color color;
+/// Result of the date-filter sheet: a concrete range+label, or a request to
+/// open the custom range picker, or to clear the filter.
+class _DateSelection {
+  final DateTimeRange? range;
+  final String? label;
+  final bool custom;
+  final bool clear;
+  const _DateSelection.range(this.range, this.label) : custom = false, clear = false;
+  const _DateSelection.custom() : range = null, label = null, custom = true, clear = false;
+  const _DateSelection.clear() : range = null, label = null, custom = false, clear = true;
+}
+
+class _DateFilterSheet extends StatelessWidget {
+  const _DateFilterSheet();
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(label),
-        if (count > 0) ...[
-          const SizedBox(width: 6),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(10),
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final surface = isDark ? AppColors.darkSurface : Colors.white;
+    final sub = theme.colorScheme.outline;
+
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    DateTimeRange day(DateTime d) => DateTimeRange(start: d, end: d);
+    final presets = <(IconData, String, _DateSelection)>[
+      (Icons.today_rounded, 'Today', _DateSelection.range(day(today), 'Today')),
+      (Icons.history_toggle_off_rounded, 'Yesterday',
+          _DateSelection.range(day(today.subtract(const Duration(days: 1))), 'Yesterday')),
+      (Icons.date_range_rounded, 'Last 7 days',
+          _DateSelection.range(DateTimeRange(start: today.subtract(const Duration(days: 6)), end: today), 'Last 7 days')),
+      (Icons.calendar_month_rounded, 'This month',
+          _DateSelection.range(DateTimeRange(start: DateTime(now.year, now.month, 1), end: today), 'This month')),
+    ];
+
+    return SafeArea(
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+        decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(22)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                    color: sub.withValues(alpha: 0.4), borderRadius: BorderRadius.circular(2)),
+              ),
             ),
-            child: Text(
-              '$count',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.only(left: 8, bottom: 4),
+              child: Text('Filter by date',
+                  style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)),
+            ),
+            for (final (icon, label, sel) in presets)
+              ListTile(
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                leading: Icon(icon, size: 20, color: AppColors.primary),
+                title: Text(label, style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
+                onTap: () => Navigator.pop(context, sel),
+              ),
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              leading: const Icon(Icons.edit_calendar_rounded, size: 20, color: AppColors.primary),
+              title: const Text('Custom range…', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
+              trailing: Icon(Icons.chevron_right_rounded, size: 18, color: sub),
+              onTap: () => Navigator.pop(context, const _DateSelection.custom()),
+            ),
+            const Divider(height: 8),
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              leading: const Icon(Icons.close_rounded, size: 20, color: AppColors.error),
+              title: const Text('Clear date filter', style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600)),
+              onTap: () => Navigator.pop(context, const _DateSelection.clear()),
+            ),
+            const SizedBox(height: 4),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Date filter button / active chip ─────────────────────────────────────────
+
+class _DateFilterButton extends StatelessWidget {
+  const _DateFilterButton({
+    required this.range,
+    required this.label,
+    required this.onPick,
+    required this.onClear,
+  });
+  final DateTimeRange? range;
+  final String? label;
+  final VoidCallback onPick;
+  final VoidCallback onClear;
+
+  static String _label(DateTimeRange r) {
+    final f = DateFormat('d MMM');
+    final sameDay =
+        r.start.year == r.end.year && r.start.month == r.end.month && r.start.day == r.end.day;
+    return sameDay ? f.format(r.start) : '${f.format(r.start)} – ${f.format(r.end)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final active = range != null;
+    final fg = active
+        ? Colors.white
+        : (isDark ? AppColors.darkTextSecondary : AppColors.lightTextSecondary);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 150),
+      height: 40,
+      decoration: BoxDecoration(
+        color: active
+            ? AppColors.primary
+            : (isDark ? AppColors.darkSurface : AppColors.lightSurface),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: active
+              ? AppColors.primary
+              : (isDark ? AppColors.darkBorder : AppColors.lightBorder),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Label area — taps to open / re-open the picker.
+          InkWell(
+            onTap: onPick,
+            borderRadius: BorderRadius.circular(20),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(14, 0, active ? 8 : 14, 0),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.calendar_today_rounded, size: 15, color: fg),
+                  const SizedBox(width: 7),
+                  Text(
+                    active ? (label ?? _label(range!)) : 'Filter by date',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12.5,
+                      fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                      color: fg,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
+          // Clear — its own generous 40x40 tap target.
+          if (active)
+            InkResponse(
+              onTap: onClear,
+              radius: 22,
+              child: const SizedBox(
+                width: 40,
+                height: 40,
+                child: Icon(Icons.close_rounded, size: 18, color: Colors.white),
+              ),
+            ),
         ],
-      ],
+      ),
     );
   }
 }
@@ -240,28 +360,105 @@ class _HistoryTab extends StatefulWidget {
 
 class _HistoryTabState extends State<_HistoryTab> {
   _HistorySubFilter _filter = _HistorySubFilter.all;
+  DateTimeRange? _dateRange;
+  String? _dateLabel;
+
+  bool _inDateRange(VendorOrder o) {
+    final r = _dateRange;
+    if (r == null) return true;
+    final d = DateTime(o.placedAt.year, o.placedAt.month, o.placedAt.day);
+    final start = DateTime(r.start.year, r.start.month, r.start.day);
+    final end = DateTime(r.end.year, r.end.month, r.end.day);
+    return !d.isBefore(start) && !d.isAfter(end);
+  }
+
+  void _apply(DateTimeRange range, String label) =>
+      setState(() {
+        _dateRange = range;
+        _dateLabel = label;
+      });
+
+  void _clearDate() => setState(() {
+        _dateRange = null;
+        _dateLabel = null;
+      });
+
+  Future<void> _openDateSheet() async {
+    final selection = await showModalBottomSheet<_DateSelection>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _DateFilterSheet(),
+    );
+    if (selection == null || !mounted) return;
+    if (selection.clear) {
+      _clearDate();
+    } else if (selection.custom) {
+      await _pickCustom();
+    } else {
+      _apply(selection.range!, selection.label!);
+    }
+  }
+
+  Future<void> _pickCustom() async {
+    final now = DateTime.now();
+    final earliest = widget.orders.isEmpty
+        ? DateTime(now.year - 1)
+        : widget.orders.map((o) => o.placedAt).reduce((a, b) => a.isBefore(b) ? a : b);
+    final earliestDay = DateTime(earliest.year, earliest.month, earliest.day);
+    final oneYearAgo = DateTime(now.year - 1, now.month, now.day);
+    final first = earliestDay.isBefore(oneYearAgo) ? earliestDay : oneYearAgo;
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: first,
+      lastDate: now,
+      initialDateRange: _dateRange,
+      helpText: 'Pick a date range',
+      saveText: 'Apply',
+    );
+    if (picked != null) _apply(picked, _DateFilterButton._label(picked));
+  }
 
   @override
   Widget build(BuildContext context) {
-    final filtered = widget.orders.where(_filter.matches).toList();
+    final filtered =
+        widget.orders.where(_filter.matches).where(_inDateRange).toList();
+    final dateActive = _dateRange != null;
 
     return Column(
       children: [
         Padding(
           padding: AppSpacing.screenInsets.copyWith(top: 12, bottom: 4),
-          child: _HistoryFilterChips(
-            selected: _filter,
-            onChanged: (f) => setState(() => _filter = f),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _HistoryFilterChips(
+                selected: _filter,
+                onChanged: (f) => setState(() => _filter = f),
+              ),
+              const SizedBox(height: 10),
+              _DateFilterButton(
+                range: _dateRange,
+                label: _dateLabel,
+                onPick: _openDateSheet,
+                onClear: _clearDate,
+              ),
+            ],
           ),
         ),
         Expanded(
           child: filtered.isEmpty
               ? _EmptyState(
-                  icon: Icons.history_rounded,
-                  message: widget.orders.isEmpty ? 'No history yet' : 'Nothing in ${_filter.label}',
+                  icon: dateActive ? Icons.event_busy_rounded : Icons.history_rounded,
+                  message: widget.orders.isEmpty
+                      ? 'No history yet'
+                      : dateActive
+                          ? 'No orders for that date'
+                          : 'Nothing in ${_filter.label}',
                   sub: widget.orders.isEmpty
                       ? 'Completed, cancelled, and rejected orders will appear here.'
-                      : 'Try a different filter above.',
+                      : dateActive
+                          ? 'Try a different date or clear the date filter.'
+                          : 'Try a different filter above.',
                 )
               : _buildGroupedList(filtered),
         ),
@@ -313,10 +510,16 @@ class _HistoryTabState extends State<_HistoryTab> {
 
   String _dayLabel(DateTime dt) {
     final now = DateTime.now();
-    final diff = now.difference(dt).inDays;
-    if (diff == 0) return 'TODAY';
-    if (diff == 1) return 'YESTERDAY';
-    return '${dt.day}/${dt.month}/${dt.year}';
+    final today = DateTime(now.year, now.month, now.day);
+    final that = DateTime(dt.year, dt.month, dt.day);
+    // Compare *calendar* days, not elapsed 24-hour periods — an order from
+    // 7pm yesterday is <24h old but is still "Yesterday". Round via hours so
+    // a DST transition can't push a midnight-to-midnight span off by one.
+    final daysAgo = (today.difference(that).inHours / 24).round();
+    if (daysAgo == 0) return 'TODAY';
+    if (daysAgo == 1) return 'YESTERDAY';
+    final fmt = dt.year == now.year ? DateFormat('EEE, d MMM') : DateFormat('d MMM yyyy');
+    return fmt.format(dt).toUpperCase();
   }
 }
 

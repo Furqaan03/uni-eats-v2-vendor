@@ -270,10 +270,13 @@ class VendorProvider extends ChangeNotifier {
       .where((o) =>
           o.status == OrderStatus.delivered || o.status == OrderStatus.cancelled)
       .toList();
-  double get todayRevenue => _orders
+  // All-time totals over the full loaded order history (the order stream is
+  // not date-scoped). Named for what they actually compute — do NOT treat
+  // these as "today"; use AnalyticsRepository for date-windowed figures.
+  double get lifetimeRevenue => _orders
       .where((o) => o.status == OrderStatus.delivered)
       .fold(0, (s, o) => s + o.total);
-  int get todayOrderCount =>
+  int get ordersServedCount =>
       _orders.where((o) => o.status == OrderStatus.delivered).length;
 
   List<MenuItem> get menuItems => _menuItems;

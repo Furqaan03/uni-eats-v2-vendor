@@ -665,7 +665,7 @@ class _ProfileHeader extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _StatPill(label: 'Orders', value: '${vendor.todayOrderCount}'),
+              _StatPill(label: 'Orders', value: '${vendor.ordersServedCount}'),
               const SizedBox(width: 16),
               const _StatPill(label: 'Rating', value: '4.7★'),
               const SizedBox(width: 16),
