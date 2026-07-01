@@ -127,9 +127,11 @@ class VendorProvider extends ChangeNotifier {
   bool _pushRefreshHooked = false;
   void _registerPushToken(String restaurantId) {
     NotificationService.instance.currentToken().then((token) {
+      debugPrint('[push] vendor currentToken restaurantId=$restaurantId => ${token == null ? 'NULL' : '${token.substring(0, 12)}… (len ${token.length})'}');
       if (token != null && token.isNotEmpty) {
         FirestoreOrderService.instance
             .saveRestaurantFcmToken(restaurantId, token)
+            .then((_) => debugPrint('[push] saveRestaurantFcmToken OK restaurantId=$restaurantId'))
             .catchError((e) => debugPrint('[push] saveRestaurantFcmToken failed: $e'));
       }
     });
