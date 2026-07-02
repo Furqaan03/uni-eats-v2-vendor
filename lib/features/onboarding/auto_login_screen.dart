@@ -1,4 +1,5 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -58,6 +59,14 @@ class _AutoLoginScreenState extends State<AutoLoginScreen> {
       if (!mounted) return;
       setState(() => _state =
           (e.code == 'failed-precondition' || e.message == 'expired') ? _State.expired : _State.error);
+    } on FirebaseAuthException catch (e) {
+      // Spark-plan links carry the custom token itself; Firebase rejects it
+      // after 1 hour with invalid-custom-token → same "expired" UX.
+      if (!mounted) return;
+      setState(() => _state =
+          (e.code == 'invalid-custom-token' || e.code == 'custom-token-mismatch')
+              ? _State.expired
+              : _State.error);
     } catch (_) {
       if (!mounted) return;
       setState(() => _state = _State.error);

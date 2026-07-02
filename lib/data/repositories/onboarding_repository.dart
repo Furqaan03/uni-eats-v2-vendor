@@ -1,13 +1,24 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:http/http.dart' as http;
 
 import '../../services/firestore_order_service.dart' show AppEnv, DataEnv;
 import '../models/registration.dart';
+
+// Cloudinary unsigned upload target for vendor documents. The project runs on
+// the Firebase Spark plan, where Firebase Storage (and Cloud Functions) can't
+// be enabled — documents go to Cloudinary instead. The cloud name and preset
+// name are public by design (unsigned uploads); the API secret is NOT here.
+// The preset must exist in the Cloudinary console: Settings → Upload →
+// Upload presets → Add: name `vendor_docs`, Signing Mode: Unsigned,
+// folder `vendor-docs`.
+const String _cloudinaryCloudName = 'dhsq8isal';
+const String _cloudinaryUploadPreset = 'vendor_docs';
 
 /// Vendor access state derived from the Firebase Auth custom claims. This is
 /// the source of truth for routing — the registration doc only drives the
@@ -53,33 +64,60 @@ class OnboardingRepository {
 
   // --- Auto-login handoff (Screen 5.1) -------------------------------------
 
-  /// Consumes the single-use token from the invite deep link and signs in.
+  /// Consumes the token from the invite deep link and signs in.
+  ///
+  /// Two link shapes are supported:
+  /// - Spark plan (no Cloud Functions): `t` IS a Firebase custom token (a JWT,
+  ///   minted by scripts/onboarding_worker.js, expires in 1 hour) — sign in
+  ///   with it directly. Expiry surfaces as [FirebaseAuthException]
+  ///   'invalid-custom-token'.
+  /// - Blaze plan: `t` is an opaque single-use secret exchanged via the
+  ///   `consumeLoginToken` callable, which enforces single-use + expiry.
+  ///
   /// Throws [FirebaseFunctionsException] (code 'failed-precondition' == expired
-  /// / already used) so the caller can show the right UI.
+  /// / already used) or [FirebaseAuthException] (expired custom token) so the
+  /// caller can show the right UI.
   Future<void> consumeLoginToken({
     required String registrationId,
     required String secret,
     required String env,
   }) async {
-    final res = await _functions.httpsCallable('consumeLoginToken').call({
-      'registrationId': registrationId,
-      'secret': secret,
-      'env': env,
-    });
-    final token = (res.data as Map)['customToken'] as String;
-    await _auth.signInWithCustomToken(token);
+    // A JWT has exactly two dots (header.payload.signature); the callable-path
+    // secret is plain hex. Decide the sign-in path by shape.
+    if ('.'.allMatches(secret).length == 2) {
+      await _auth.signInWithCustomToken(secret);
+    } else {
+      final res = await _functions.httpsCallable('consumeLoginToken').call({
+        'registrationId': registrationId,
+        'secret': secret,
+        'env': env,
+      });
+      final token = (res.data as Map)['customToken'] as String;
+      await _auth.signInWithCustomToken(token);
+    }
     await _auth.currentUser?.getIdToken(true); // pull fresh claims immediately
   }
 
-  /// Rate-limited (server-enforced, max 3/24h) re-issue of the auto-login link.
+  /// Rate-limited (max 3/24h) re-issue of the auto-login link. Prefers the
+  /// callable; on Spark (functions unreachable) falls back to flagging the
+  /// registration doc with `resendQueued` for scripts/onboarding_worker.js.
+  /// The fallback needs the vendor signed in (rules: own-doc updates only) —
+  /// from a signed-out expired-link screen it will fail, and the admin can
+  /// resend from the dashboard instead.
   Future<void> resendLoginLink({
     required String registrationId,
     required String env,
   }) async {
-    await _functions.httpsCallable('resendLoginLink').call({
-      'registrationId': registrationId,
-      'env': env,
-    });
+    try {
+      await _functions.httpsCallable('resendLoginLink').call({
+        'registrationId': registrationId,
+        'env': env,
+      });
+    } on FirebaseFunctionsException catch (e) {
+      const unreachable = {'not-found', 'unavailable', 'internal'};
+      if (!unreachable.contains(e.code)) rethrow;
+      await _registrations.doc(registrationId).update({'resendQueued': true});
+    }
   }
 
   // --- Registration doc ----------------------------------------------------
@@ -139,8 +177,10 @@ class OnboardingRepository {
     await _registrations.doc(id).update({'passwordSet': true});
   }
 
-  /// Uploads one document to the locked-down vendor-docs path and returns its
-  /// storage path. Client-side type/size checks mirror the Storage rules.
+  /// Uploads one document to Cloudinary (unsigned preset — see the constants
+  /// at the top of this file) and returns it with the delivery URL stored as
+  /// the document's path, so the admin can preview it straight from the
+  /// registration doc. Client-side type/size checks kept from the Storage era.
   Future<RegistrationDocument> uploadDocument({
     required String kind,
     required File file,
@@ -157,14 +197,27 @@ class OnboardingRepository {
     if (!allowed.contains(ext)) {
       throw ArgumentError('Only JPG, PNG or PDF files are allowed.');
     }
-    final contentType = ext == 'pdf'
-        ? 'application/pdf'
-        : (ext == 'png' ? 'image/png' : 'image/jpeg');
 
-    final path = 'vendor-docs/${user.uid}/$kind-${DateTime.now().millisecondsSinceEpoch}.$ext';
-    final ref = FirebaseStorage.instance.ref(path);
-    await ref.putFile(file, SettableMetadata(contentType: contentType));
-    return RegistrationDocument(kind: kind, storagePath: path, uploadedAt: DateTime.now());
+    final uri = Uri.parse(
+        'https://api.cloudinary.com/v1_1/$_cloudinaryCloudName/auto/upload');
+    final req = http.MultipartRequest('POST', uri)
+      ..fields['upload_preset'] = _cloudinaryUploadPreset
+      ..fields['folder'] = 'vendor-docs/${user.uid}'
+      ..fields['public_id'] = '$kind-${DateTime.now().millisecondsSinceEpoch}'
+      ..files.add(await http.MultipartFile.fromPath('file', file.path));
+    final res = await http.Response.fromStream(await req.send());
+    if (res.statusCode != 200) {
+      String message = 'Upload failed (${res.statusCode}).';
+      try {
+        final err = jsonDecode(res.body) as Map<String, dynamic>;
+        message = (err['error'] as Map?)?['message'] as String? ?? message;
+      } catch (_) {}
+      throw StateError(message);
+    }
+    final body = jsonDecode(res.body) as Map<String, dynamic>;
+    final url = body['secure_url'] as String? ?? '';
+    if (url.isEmpty) throw StateError('Upload succeeded but returned no URL.');
+    return RegistrationDocument(kind: kind, storagePath: url, uploadedAt: DateTime.now());
   }
 
   /// Writes the documents array and (re)submits for review. Works for both the
