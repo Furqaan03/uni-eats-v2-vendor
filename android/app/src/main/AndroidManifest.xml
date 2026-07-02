@@ -26,6 +26,19 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- Vendor onboarding auto-login deep link (custom scheme). The
+                 invite email's sign-in link resolves to
+                 unieats-vendor://onboarding?rid=..&t=..&env=.. which app_links
+                 delivers to DeepLinkService. Keep DEEP_LINK_BASE in
+                 functions/config.js aligned with this. (https App Links via
+                 assetlinks.json are a follow-up once the website is live —
+                 see ../ADMIN_DASHBOARD_TODO.md.) -->
+            <intent-filter android:autoVerify="false">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="unieats-vendor" android:host="onboarding"/>
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

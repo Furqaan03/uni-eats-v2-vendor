@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -7,8 +8,11 @@ import '../../core/theme/app_colors.dart';
 import '../../core/providers/auth_provider.dart';
 import '../../core/providers/vendor_provider.dart';
 import '../../core/utils/page_transitions.dart';
+import '../../data/repositories/onboarding_repository.dart';
 import '../../widgets/app_logo.dart';
 import '../onboarding/onboarding_screen.dart';
+import '../onboarding/pending_shell.dart';
+import '../onboarding/pending_status_screen.dart';
 import '../auth/login_screen.dart';
 import '../navigation/main_nav_shell.dart';
 
@@ -69,20 +73,47 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
       return;
     }
 
-    // Try auto-login from saved credentials.
-    final auth = context.read<VendorAuthProvider>();
-    final session = await auth.tryAutoSignIn();
+    // Not signed in at all → login.
+    if (FirebaseAuth.instance.currentUser == null) {
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(fadeSlidePage(const VendorLoginScreen()));
+      return;
+    }
+
+    // Signed in — route on the onboarding claim (source of truth). Refresh so a
+    // just-approved account unlocks with no re-login.
+    final access = await OnboardingRepository.instance.readAccess(refresh: true);
     if (!mounted) return;
 
-    if (session != null) {
-      context.read<VendorProvider>().setRestaurant(
-            id: session.restaurantId,
-            name: session.restaurantName,
-            location: session.restaurantLocation,
-          );
-      Navigator.of(context).pushReplacement(fadeSlidePage(const MainNavShell()));
-    } else {
-      Navigator.of(context).pushReplacement(fadeSlidePage(const VendorLoginScreen()));
+    switch (access) {
+      case VendorAccess.pending:
+      case VendorAccess.needsChanges:
+        Navigator.of(context).pushReplacement(fadeSlidePage(const VendorPendingShell()));
+        return;
+      case VendorAccess.rejected:
+        Navigator.of(context).pushReplacement(fadeSlidePage(const RejectedScreen()));
+        return;
+      case VendorAccess.approved:
+      case VendorAccess.none:
+        // Approved (or a legacy vendor without the claim yet): load the vendor
+        // profile. If present → full app; otherwise fall back to login.
+        final session = await context.read<VendorAuthProvider>().tryAutoSignIn();
+        if (!mounted) return;
+        if (session != null) {
+          context.read<VendorProvider>().setRestaurant(
+                id: session.restaurantId,
+                name: session.restaurantName,
+                location: session.restaurantLocation,
+              );
+          Navigator.of(context).pushReplacement(fadeSlidePage(const MainNavShell()));
+        } else if (access == VendorAccess.approved) {
+          // Approved claim but no profile yet — sit in the pending shell, which
+          // will route on once provisioning completes.
+          Navigator.of(context).pushReplacement(fadeSlidePage(const VendorPendingShell()));
+        } else {
+          Navigator.of(context).pushReplacement(fadeSlidePage(const VendorLoginScreen()));
+        }
+        return;
     }
   }
 

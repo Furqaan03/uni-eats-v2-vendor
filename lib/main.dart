@@ -10,6 +10,7 @@ import 'core/utils/page_transitions.dart';
 import 'features/orders/order_detail_screen.dart';
 import 'features/splash/splash_screen.dart';
 import 'firebase_options.dart';
+import 'services/deep_link_service.dart';
 import 'services/firestore_order_service.dart';
 import 'services/push/notification_service.dart';
 
@@ -38,9 +39,32 @@ void _openOrderFromNotification(Map<String, dynamic> data) {
   rootNavigatorKey.currentState?.push(fadeSlidePage(OrderDetailScreen(orderId: orderId)));
 }
 
-class UniEatsVendorApp extends StatelessWidget {
+class UniEatsVendorApp extends StatefulWidget {
   const UniEatsVendorApp({super.key, required this.firebaseReady});
   final Future<void> firebaseReady;
+
+  @override
+  State<UniEatsVendorApp> createState() => _UniEatsVendorAppState();
+}
+
+class _UniEatsVendorAppState extends State<UniEatsVendorApp> {
+  late final DeepLinkService _deepLinks = DeepLinkService(rootNavigatorKey);
+
+  @override
+  void initState() {
+    super.initState();
+    // Only wire deep links once Firebase is ready — the handoff screen needs
+    // Auth/Functions available before it can consume a token.
+    if (kUseFirebase) {
+      widget.firebaseReady.then((_) => _deepLinks.init());
+    }
+  }
+
+  @override
+  void dispose() {
+    _deepLinks.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +86,7 @@ class UniEatsVendorApp extends StatelessWidget {
             themeMode: themeProvider.themeMode,
             themeAnimationDuration: const Duration(milliseconds: 300),
             themeAnimationCurve: Curves.easeInOut,
-            home: SplashScreen(firebaseReady: firebaseReady),
+            home: SplashScreen(firebaseReady: widget.firebaseReady),
           );
         },
       ),

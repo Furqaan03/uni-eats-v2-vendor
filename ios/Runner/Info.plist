@@ -22,6 +22,20 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<!-- Vendor onboarding auto-login deep link (custom scheme). Matches the
+	     Android intent-filter + DEEP_LINK_BASE in functions/config.js. Universal
+	     Links via an AASA file are a follow-up once the website is live. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>qa.theunieats.vendor.onboarding</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>unieats-vendor</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>

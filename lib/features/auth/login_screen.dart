@@ -5,7 +5,7 @@ import '../../core/providers/auth_provider.dart';
 import '../../core/providers/vendor_provider.dart';
 import '../../widgets/app_logo.dart';
 import '../navigation/main_nav_shell.dart';
-import '../auth/signup_screen.dart';
+import '../onboarding/cold_apply_screen.dart';
 import '../../core/utils/page_transitions.dart';
 import 'google_vendor_setup_screen.dart';
 
@@ -252,7 +252,7 @@ class _VendorLoginScreenState extends State<VendorLoginScreen> {
               // Sign Up link
               Center(
                 child: GestureDetector(
-                  onTap: () => Navigator.of(context).push(fadeSlidePage(const VendorSignupScreen())),
+                  onTap: () => Navigator.of(context).push(fadeSlidePage(const ColdApplyScreen())),
                   child: RichText(
                     text: TextSpan(
                       text: "New vendor? ",
